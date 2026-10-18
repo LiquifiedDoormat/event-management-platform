@@ -2,7 +2,7 @@
 
 Mobile-first, English/Hindi web app for running event logistics: hotels, hotel coordinators, buses and attendees, with live bus tracking shared from the coordinator's phone.
 
-> **Status:** Phase 1 (foundation) is done: app shell, bilingual routing, database schema and CI. Sign-in, dashboards, maps and live tracking are **not built yet**. See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
+> **Status:** Phases 1–2 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control and basic role homepages. Management screens, maps and live tracking are **not built yet**. See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
 
 ## Planned features
 
@@ -39,6 +39,34 @@ npm run db:seed      # optional: fake demo data (local only)
 npm run dev          # open http://localhost:3000
 ```
 
+## Signing in locally
+
+With `OTP_PROVIDER=dev`, no SMS is sent: the code appears in the terminal running `npm run dev` as `[dev-otp] code for +••••••••0100: 123456`.
+
+Seeded demo accounts (fake numbers): admin `99999 00002`, coordinators `99999 00010`/`00011`, attendees `99999 00100`–`00104` and `00110`–`00114`.
+
+## Creating the first Owner
+
+Owners cannot be created in the app. Run this once, with `DATABASE_URL` pointing at the target database:
+
+```bash
+npm run owner:create -- --phone "98765 43210" --name "Full Name"
+```
+
+It refuses if an Owner already exists (`--allow-additional` overrides) or if the number belongs to another account (`--promote-existing` promotes it and signs that account out everywhere). The action is recorded in the audit log.
+
+## Phone OTP provider (Twilio Verify)
+
+1. Create a Twilio account at https://www.twilio.com and upgrade it (trial accounts can only text verified numbers).
+2. Console → **Verify → Services → Create**. Enable the **SMS** channel. Copy the Service SID (`VA…`).
+3. Console → **Account Info**: copy the Account SID (`AC…`) and Auth Token.
+4. In `.env` (or Vercel environment variables): `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`.
+5. In Verify → Settings, consider enabling **Fraud Guard** and restricting SMS to India (+91) to block SMS-pumping abuse.
+
+**Cost:** Twilio Verify charges per successful verification plus an SMS fee per message to India; see https://www.twilio.com/en-us/verify/pricing. Each user verifies once per device (sessions last 30 days of inactivity), so expect roughly one verification per attendee per device. Twilio handles Indian DLT registration for Verify. A cheaper India-only provider (e.g. MSG91) can be added as another `OtpProvider` in `src/lib/auth/otp/` without changing the rest of the app.
+
+**Status:** the Twilio integration is implemented but has **not yet been tested against a real Twilio account**.
+
 ## Environment variables
 
 All configuration lives in `.env` (git-ignored). `.env.example` lists every variable with placeholders only. Variables starting with `NEXT_PUBLIC_` are visible in the browser, so never put secrets in them. The app validates its configuration on first use and reports which variable names are missing or invalid.
@@ -47,7 +75,7 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 | --- | --- | --- |
 | `APP_URL` | now | Your site's URL |
 | `POSTGRES_PASSWORD`, `DATABASE_URL`, `TEST_DATABASE_URL` | now | Local: you choose. Production: your managed Postgres provider |
-| `OTP_PROVIDER`, `TWILIO_*` | Phase 2 | Twilio Console → Verify → Services |
+| `OTP_PROVIDER`, `TWILIO_*` | now (`dev` locally) | Twilio Console → Verify → Services |
 | `PUSHER_*`, `NEXT_PUBLIC_PUSHER_*` | Phase 5 | Pusher dashboard → Channels app → App Keys |
 | `NEXT_PUBLIC_GOOGLE_MAPS_*` | Phase 4 | Google Cloud Console → APIs & Services → Credentials |
 
@@ -56,7 +84,9 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm run check` | Lint + type-check + unit tests |
+| `npm run check` | Lint + type-check + all tests |
+| `npm run test:unit` / `npm run test:integration` | Unit tests / integration tests (need `TEST_DATABASE_URL`) |
+| `npm run owner:create -- --phone … --name …` | Create the first Owner |
 | `npm run build` / `npm start` | Production build / serve it |
 | `npm run db:migrate` | Create/apply migrations (development) |
 | `npm run db:deploy` | Apply migrations (production/CI) |
@@ -72,6 +102,7 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 - **`Invalid environment configuration: …`**: a variable in `.env` is missing or malformed; the message names it.
 - **Database connection refused**: start Docker Desktop, then `npm run db:up`.
 - **`POSTGRES_PASSWORD` required**: set it in `.env` before `npm run db:up`.
+- **Integration tests skipped**: set `TEST_DATABASE_URL` (its database name must contain `test` or `ci`).
 - **Password mismatch after changing `.env`**: the Docker volume keeps the first password. Change it back, or `docker compose down -v` to recreate the local DB (this deletes local data).
 
 ## Security
@@ -88,4 +119,4 @@ See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the serv
 
 ## Current limitations
 
-No sign-in, dashboards, maps or live tracking yet. Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
+Role homepages are basic summaries; there are no management screens, maps or live tracking yet. Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
