@@ -1,6 +1,6 @@
 # PROJECT_MEMORY.md — canonical AI / developer handover
 
-_Last updated: 2026-10-18 (end of Phase 3), branch `feat/phase-3-admin` (stacked on `feat/phase-2-auth`, PR #2)._
+_Last updated: 2026-10-18 (end of Phase 4), branch `feat/phase-4-customer` (from `main` after PRs #1–#3 merged)._
 
 Requirements: [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md) is the full, canonical project brief.
 
@@ -14,17 +14,17 @@ The repository's verified state takes precedence over this file. If they disagre
 - **Account types (roles):** `OWNER` (everything incl. reassignment, roles, config), `ADMIN` (view/manage operational records, no Owner powers), `COORDINATOR` (their designated hotel + buses/trips they are assigned to; controls bus status and GPS sharing), `CUSTOMER` (attendee: own profile + own hotel, its coordinator and its buses only).
   - The brief lists three account types; `COORDINATOR` is a separate role so coordinators get least-privilege trip control instead of Admin rights. See `docs/ARCHITECTURE.md`.
 - **Scale target:** 16,000+ registered users, 2,000+ concurrent. Not yet tested.
-- **Stack:** Next.js 16.4 (App Router, TypeScript strict, Turbopack), Tailwind CSS 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. OTP: Twilio Verify (REST, no SDK) behind `OtpProvider`. Planned: Pusher Channels (realtime), Google Maps JS API (`@vis.gl/react-google-maps`), k6, Playwright.
+- **Stack:** Next.js 16.4 (App Router, TypeScript strict, Turbopack), Tailwind CSS 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. OTP: Twilio Verify (REST, no SDK) behind `OtpProvider`. Maps: Google Maps JS API via `@vis.gl/react-google-maps` 1.10.1. Planned: Pusher Channels (realtime), k6, Playwright.
 - **Package manager:** npm (commit `package-lock.json`; don't mix managers). Node ≥ 22 (developed on Node 26).
 
 ## 2. Current Project Status
 
-- **Stage:** Phase 3 (core administration) complete on `feat/phase-3-admin`. Phase 4 not started.
-- **Completed:** Phases 1–2 (foundation, OTP auth, sessions, policies, Owner bootstrap); Phase 3: services + Owner/Admin UI for hotels (CRUD, coordinator assignment, deactivate), buses (CRUD, ordered stops editor, hotel/coordinator reassignment, deactivate), coordinators (directory + detail), people (directory with search/filters, provisioning, edit, hotel allotment, role change, deactivate/reactivate), staff navigation (bottom bar on phones), linked dashboard tiles, audit log entries for every change.
-- **Partially implemented:** Coordinator and Customer homepages are summaries (Phase 1–2 versions). No audit-log viewer or event-settings page yet (Owner-only, planned).
-- **Not started:** Google Maps embeds, customer bus/stop view, trips + status controls, GPS, realtime, load tests, deployment.
-- **Broken/blocked:** nothing broken. Twilio implemented but unverified (no account). Pusher, Google Maps, managed Postgres, Vercel not set up.
-- **PRs:** #1 (Phase 1) merged into `main`. #2 (Phase 2) open → `main`, CI passed, Auto-fix on. Phase 3 PR not yet opened (stack on #2 or open after #2 merges).
+- **Stage:** Phase 4 (customer experience) complete on `feat/phase-4-customer`. Phase 5 not started.
+- **Completed:** Phases 1–3 (foundation, OTP auth, sessions, policies, Owner bootstrap, admin directories/management). Phase 4: attendee homepage (transport first: per-bus status panel + location freshness + link; hotel with map; coordinator call button), bus tracking page `/track/[busId]` (status, freshness, map with hotel/stops/bus, coordinator on board, ordered stops) for attendees, coordinators and staff, Google Maps component with no-key/auth-failure fallback, translated 404 page, coordinator homepage links to tracking.
+- **Partially implemented:** Attendee pages refresh on demand only (Refresh button); live updates come with Phase 5. Owner audit-log viewer and event settings page not built.
+- **Not started:** trips (start/end), status controls, GPS sharing, realtime (Pusher), retention job, load tests, deployment.
+- **Broken/blocked:** nothing broken. Google Maps and Twilio are implemented but **unverified with real keys** (no accounts yet). Pusher, managed Postgres, Vercel not set up.
+- **PRs:** #1, #2, #3 merged into `main`. Phase 4 PR not yet opened.
 
 ## 3. Repository Structure
 
@@ -54,10 +54,17 @@ src/app/[locale]/hotels/        page (directory), new/, [id]/ (detail + edit + O
 src/app/[locale]/buses/         page, new/, [id]/ (detail, stops editor, edit, Owner reassignments)
 src/app/[locale]/coordinators/  page (directory), [id]/ (PersonDetail, role must be COORDINATOR)
 src/app/[locale]/people/        page (search + role/hotel/status filters), new/, [id]/ (PersonDetail)
+src/app/[locale]/track/[id]/    Attendee-facing bus view (status, freshness, map, stops); any role, policy-checked
+src/app/[locale]/not-found.tsx  Translated 404 (also used for forbidden records)
 src/components/auth/            LoginForm, SignOutButton
 src/components/layout/          LanguageSwitcher, StaffNav (Owner/Admin nav), StatTile, EventOverview
 src/components/ui/              ActionForm (+ field-error context), Fields (TextField, SelectField), Layout (PageHeader, Section, Badge, ListCard, DetailList, MapsLink, EmptyState), Directory (SearchForm, FilterSelect, Pagination)
 src/components/{hotels,buses,people}/  HotelFields, BusFields/StopFields, PersonDetail
+src/components/maps/            LocationMap (dynamic, fallback when no key), LocationMapInner (APIProvider, AdvancedMarker+Pin)
+src/components/transport/       StatusParts (BusStatusPanel, LocationFreshnessNote), RefreshButton
+src/lib/maps/config.ts          mapsApiKey (placeholder "<…>" = unset), mapId (default DEMO_MAP_ID), MapPoint type
+src/lib/transport/status.ts     STATUS_KIND, STATUS_ICON, locationFreshness(live/stale/none)
+src/server/services/transport.ts  getEventSettings, getCustomerHome, getTrackedBus
 src/features/admin/             actions.ts (all form Server Actions), action-state.ts (ActionState type)
 src/lib/validation/             common.ts (field schemas, formToObject, fieldErrors), entities.ts (hotel, bus, stop, person schemas)
 src/lib/utils/page.ts           param(), requireStaff(), orNotFound()
@@ -76,15 +83,15 @@ src/lib/utils/                  phone.ts (normalizePhone: Indian numbers must be
 src/server/policies/index.ts    ALL authorization rules (pure functions): can(), assignableRoles, canEditPerson, canView*, canSendLocation, canChangeStatus, canStartTrip
 src/server/policies/scope.ts    loadScope(actor): hotels/buses a coordinator/customer relates to (fresh per request)
 src/server/services/auth.ts     requestOtp, verifyOtp, logout, roleHome
-src/server/services/dashboard.ts  getEventOverview (staff), getCustomerOverview, getCoordinatorOverview
+src/server/services/dashboard.ts  getEventOverview (staff), getCoordinatorOverview
 tests/setup.ts                  Points DATABASE_URL at TEST_DATABASE_URL (name must contain test/ci) or a dead URL
 tests/global-setup.ts           prisma migrate deploy on the test DB
-tests/unit/                     env, phone, policies
-tests/integration/              auth, authorization, create-owner, admin-services (+ helpers.ts: resetDb, fixtures)
+tests/unit/                     env, phone, policies, transport
+tests/integration/              auth, authorization, create-owner, admin-services, transport (+ helpers.ts: resetDb, fixtures)
 AGENTS.md                       Next.js agent rules (auto-maintained block) + pointer to this file
 ```
 
-Planned locations: realtime → `src/lib/realtime/`, maps → `src/lib/maps/` + `src/components/maps/`, trips → `src/server/services/trips.ts` + `src/features/trips/`.
+Planned locations: realtime → `src/lib/realtime/`, trips → `src/server/services/trips.ts` + `src/features/trips/`, GPS client hook → `src/hooks/useGeolocationSharing.ts`.
 
 ## 4. Architecture and Data Model
 
@@ -96,7 +103,8 @@ Planned locations: realtime → `src/lib/realtime/`, maps → `src/lib/maps/` + 
 - **Auth flow:** phone → `normalizePhone` → rate limits → active user lookup (unknown/inactive numbers: generic "sent", no SMS) → `OtpProvider.send` → code → `OtpProvider.check` → `createSession` (random token cookie, SHA-256 in DB) → audit `auth.login` → redirect to role home.
 - **Sessions:** cookie `__Host-session` (prod) / `session` (dev), HttpOnly, SameSite=Lax, 365-day cookie; validity = DB `expiresAt` (30 days of inactivity, renewed ≤ once/day). User row re-read every request.
 - **API envelope:** `{ok:true,data}` / `{ok:false,error:{code}}`, `Cache-Control: no-store`. Codes in `src/lib/api/response.ts`; client maps them to `auth.errors.*` strings.
-- **GPS flow (planned, Phase 5):** see `docs/ARCHITECTURE.md`. Policies `canSendLocation` / `canChangeStatus` / `canStartTrip` already exist and are tested.
+- **Attendee views (Phase 4):** see `docs/ARCHITECTURE.md` › Attendee views. `getTrackedBus` returns 404 for buses outside scope or inactive (non-staff). Attendees see the trip coordinator's name + phone for their own buses. Stale locations (older than `EventConfig.staleLocationSeconds`, default 120 s) are labelled and drawn grey; never shown as current.
+- **GPS flow (planned, Phase 5):** see `docs/ARCHITECTURE.md`. Policies `canSendLocation` / `canChangeStatus` / `canStartTrip` already exist and are tested. Phase 5 should make `/track` and `/customer` update live and keep the Refresh button as a fallback.
 
 ## 5. Completed Features
 
@@ -119,7 +127,9 @@ Planned locations: realtime → `src/lib/realtime/`, maps → `src/lib/maps/` + 
 | Relationship scoping (customer/coordinator) | Verified | Integration tests (other hotel/bus/attendee denied; hotel reassignment immediate; GPS only from trip coordinator) |
 | Owner bootstrap script | Verified | Integration tests (first owner, refuse second, --allow-additional, --promote-existing, bad input) + manual run on dev DB |
 | Role homepages | Verified (basic) | Browser (customer, en + hi), curl (owner) |
-| CI workflow | Verified (Phases 1–2) | Phase 3 run pending |
+| CI workflow | Verified (Phases 1–3) | Phase 4 run pending |
+| Attendee homepage + bus tracking page | Verified | 7 integration tests (`transport.test.ts`: own bus visible with trip/location/stops; other hotel's bus and unknown IDs → not_found; hotel reassignment immediate; inactive bus hidden from attendee, visible to admin; coordinator scope; inactive coordinator omitted; no-hotel case) + 3 unit tests (freshness, status grouping). Browser as attendee at 375px with a temporary demo trip (removed afterwards): status panel, stale-location warning, Hindi tracking page, other hotel's bus → translated 404 |
+| Google Maps rendering | **Implemented, unverified** | No API key yet; the no-key fallback path was verified in the browser |
 | Hotel/bus/stop/person services + policies | Verified | 23 integration tests (`admin-services.test.ts`): CRUD, owner-only actions denied to admins, customers/coordinators denied, coordinator move, deactivation guards, duplicate phone/registration, stops ordering, pagination + search, session revocation |
 | Admin UI (directories, detail pages, forms) | Verified (manual) | Browser as Owner at 375px: dashboard, hotels list, hotel detail, validation errors keep input + show field messages, successful save, add stop (form resets), Hindi people directory. curl: Admin sees edit/stop controls but no Owner-only buttons; Owner sees all; customer redirected from staff pages |
 
@@ -127,25 +137,26 @@ Planned locations: realtime → `src/lib/realtime/`, maps → `src/lib/maps/` + 
 
 - [x] Phase 1 — Foundation
 - [x] Phase 2 — Auth & authorization (Twilio live test pending; needs account)
-- [x] Phase 3 — Core administration (hotels, buses + stops, coordinators, people, assignments, directories, detail pages, staff nav)
-  - [ ] Follow-ups: Owner audit-log viewer page; event settings page (`config.update`); collapsible filters on phones
-- [ ] **Phase 4 — Customer experience** (next)
-  - [ ] Google Maps provider (`@vis.gl/react-google-maps`) with lazy loading + error fallback; needs `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (works without: address + "Open in Google Maps" link)
-  - [ ] Customer homepage: hotel map, coordinator contact, buses with stops/route, status (from active trip), last update
-  - [ ] Customer-scoped hotel/bus detail views (policy `canViewHotel/canViewBus`), tests that other hotels' data is unreachable
-  - [ ] Coordinator homepage: designated hotel + their buses with links
-- [ ] Phase 5 — Trips, status controls, GPS sharing, Pusher realtime, stale detection, retention job (needs Pusher). Depends on 4.
+- [x] Phase 3 — Core administration
+  - [ ] Follow-ups: Owner audit-log viewer; event settings page (`config.update`: event name, stale threshold, retention); collapsible filters on phones
+- [x] Phase 4 — Customer experience (Maps live test pending; needs key)
+- [ ] **Phase 5 — Trips, status and live GPS** (next; highest priority feature)
+  - [ ] `src/server/services/trips.ts`: startTrip (partial unique index → conflict), endTrip, changeStatus (statusVersion check against stale submissions, BusStatusEvent row), setSharing; Server Actions + coordinator trip control page (large status buttons)
+  - [ ] `POST /api/locations`: auth + `canSendLocation` + Zod (lat/lng/accuracy/recordedAt), conditional upsert of `BusLocation` (newer `recordedAt` only), sampled `LocationPoint` per `historySampleSeconds`, rate limit per trip
+  - [ ] Client `useGeolocationSharing` (watchPosition, ~5–10 s throttle when moving, Wake Lock where supported, clear permission/error states, stop on trip end)
+  - [ ] `RealtimePublisher` interface + Pusher implementation + `/api/realtime/auth` (private-bus-{id} channels authorized via `canViewBus`); no-op publisher when Pusher isn't configured, with polling fallback on `/track`
+  - [ ] Live updates on `/track` and `/customer`; retention cleanup script
+  - [ ] Tests: trip lifecycle, status permissions, stale/out-of-order location rejection, channel auth
 - [ ] Phase 6 — Translation audit, accessibility pass, mobile polish.
-- [ ] Phase 7 — Deployment, DEPLOYMENT.md/OPERATIONS.md, k6 load tests, CSP, cleanup job, Twilio live test.
+- [ ] Phase 7 — Deployment, DEPLOYMENT.md/OPERATIONS.md, k6 load tests, CSP, cleanup job, Twilio + Maps live tests.
 
 ## 7. Current Development State
 
-- **Last completed task:** Phase 3 (branch `feat/phase-3-admin`).
+- **Last completed task:** Phase 4 (branch `feat/phase-4-customer`).
 - **In progress:** nothing.
-- **Next recommended task:** Phase 4 (customer experience + Google Maps).
-- **Incomplete changes:** none.
-- **Check results (2026-10-18, local):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 75/75 (7 files), `npm run build` ✅.
-- **Merge order:** PR #2 (Phase 2) → then Phase 3 PR.
+- **Next recommended task:** Phase 5 (trips, status controls, GPS, realtime).
+- **Incomplete changes:** none. The temporary demo trip used for browser testing was deleted from the local dev DB.
+- **Check results (2026-10-18, local):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 85/85 (9 files), `npm run build` ✅.
 
 ## 8. Setup and Execution
 
@@ -167,11 +178,11 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 
 | Service | Status |
 | --- | --- |
-| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PR #1 merged; PR #2 open (CI passed, Auto-fix on). Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
+| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#3 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
 | PostgreSQL | Local Docker only. Managed provider not chosen/created. |
 | Phone OTP | `dev` provider locally. Twilio Verify implemented; **account not created, untested**. Env: `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Setup steps + pricing notes in README. |
 | Realtime (Pusher Channels) | Not set up. |
-| Google Maps Platform | Not set up. |
+| Google Maps Platform | Integrated (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, optional `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`); **no key yet, untested with Google**. Setup, restrictions, billing and quota steps in README › Google Maps. |
 | Vercel | Not set up. |
 
 ## 10. Known Issues and Risks
@@ -189,6 +200,9 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 - Translation strings are visible in page payloads only for `common/auth/nav/forms/errors`; when debugging UI with grep, match rendered elements, not raw text.
 - Directory search uses `contains` (ILIKE) without trigram indexes; fine for ~16k users, revisit under load testing.
 - Dropdown option lists are capped at 500 (hotels/coordinators).
+- npm 12 (local) blocks dependency install scripts by default (`npm install-scripts ls` lists prisma, esbuild, @swc/core, unrs-resolver, …). The app builds and runs without them; CI uses Node 22/npm 10, which runs them. Approve with `npm install-scripts approve <pkg>` only if something breaks.
+- `.env` copied from `.env.example` contains `<…>` placeholders for Maps keys; `src/lib/maps/config.ts` treats those as unset.
+- Relative times ("5 minutes ago") are rendered on the server at request time; they don't tick until the page refreshes (Phase 5 live updates).
 - No Content-Security-Policy yet. Load/scale targets unverified.
 
 ## 11. Change History
@@ -208,10 +222,16 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
   - No new dependencies. No schema changes.
   - Decisions: Server Actions for forms (built-in origin check); stops hard-deleted, everything else deactivated; Admin can do first attendee hotel allotment; bus coordinator assignment Owner-only; 25-row keyset pages; mobile bottom nav with hyphenated labels.
 
+- **2026-10-18 — Phase 4 customer experience** (`feat/phase-4-customer`):
+  - Added: `@vis.gl/react-google-maps@1.10.1`; `src/lib/{maps/config.ts,transport/status.ts}`, `src/server/services/transport.ts`, `src/components/maps/{LocationMap,LocationMapInner}.tsx`, `src/components/transport/{StatusParts,RefreshButton}.tsx`, `src/app/[locale]/track/[id]/page.tsx`, `src/app/[locale]/not-found.tsx`, tests `tests/unit/transport.test.ts`, `tests/integration/transport.test.ts`.
+  - Changed: `[locale]/customer/page.tsx` (rebuilt, transport first), `[locale]/coordinator/page.tsx` (links to tracking), `[locale]/buses/[id]/page.tsx` ("See what attendees see"), `services/dashboard.ts` (removed `getCustomerOverview`, replaced by `getCustomerHome`), `tests/integration/authorization.test.ts`, messages en/hi (`transport`, `maps`, `errors.notFoundHelp`, `buses.attendeeView`), README (Google Maps section), ARCHITECTURE, SECURITY.
+  - No schema changes.
+  - Decisions: one tracking route for all roles (policy-checked); attendees see the on-board coordinator's phone; stale = grey marker + warning; no polylines between stops; maps loaded only client-side on map pages; no key → text fallback.
+
 ## 12. Instructions for the Next AI
 
 1. Read `docs/MASTER_PROMPT.md` (requirements), this file, then `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DATABASE.md`, `AGENTS.md`.
-2. Run `git status`, `git log --oneline -10`, `git branch -a`; check which of PR #2 / the Phase 3 PR have merged.
+2. Run `git status`, `git log --oneline -10`, `git branch -a`; check whether the Phase 4 PR has merged.
 3. Verify state: `npm install && npm run db:up && npm run db:migrate && npm run check && npm run build`.
 4. Constraints: never commit `.env` or secrets; never force-push; never reset/drop the production DB; every endpoint follows the request pattern in §4 and uses `src/server/policies`; don't mark features verified without running checks; keep `messages/en.json` and `hi.json` keys in sync; update this file after each milestone.
-5. **Next concrete action:** Phase 4 step 1: add `@vis.gl/react-google-maps`, create `src/components/maps/{MapProvider,HotelMap}.tsx` (lazy, with fallback when no key / load error), then rebuild the Customer homepage around hotel map + buses + stops + status, with integration tests proving customers can't reach other hotels' buses.
+5. **Next concrete action:** Phase 5 step 1: `src/server/services/trips.ts` (startTrip/endTrip/changeStatus/setSharing with policies, statusVersion, BusStatusEvent, audit) + integration tests, then the coordinator trip-control page with large status buttons.

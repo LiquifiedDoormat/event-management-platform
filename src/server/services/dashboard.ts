@@ -18,23 +18,6 @@ export async function getEventOverview(actor: Actor) {
   return { hotels, buses, attendees, coordinators, hotelsWithoutCoordinator, attendeesWithoutHotel };
 }
 
-/**
- * A customer's own hotel, its coordinator (name + phone only) and its active buses.
- * Scoped by the user's current hotelId, read fresh from the session.
- */
-export async function getCustomerOverview(user: SessionUser) {
-  if (!user.hotelId) return null;
-  return prisma.hotel.findFirst({
-    where: { id: user.hotelId, isActive: true },
-    select: {
-      name: true,
-      address: true,
-      coordinator: { select: { name: true, phone: true } },
-      buses: { where: { isActive: true }, select: { id: true, label: true }, orderBy: { label: "asc" } },
-    },
-  });
-}
-
 /** A coordinator's designated hotel and the buses they accompany. */
 export async function getCoordinatorOverview(user: SessionUser) {
   const [hotel, buses] = await Promise.all([

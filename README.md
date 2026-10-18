@@ -2,7 +2,7 @@
 
 Mobile-first, English/Hindi web app for running event logistics: hotels, hotel coordinators, buses and attendees, with live bus tracking shared from the coordinator's phone.
 
-> **Status:** Phases 1–3 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, role homepages, and Owner/Admin management of hotels, buses (with stops), coordinators and people. Maps, the full attendee view and live tracking are **not built yet**. See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
+> **Status:** Phases 1–4 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management of hotels, buses (with stops), coordinators and people, and the attendee experience (transport-first homepage, bus tracking page with stops, Google Maps with a no-key fallback). Trips, status controls and live GPS are **not built yet** (Phase 5). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
 
 ## Planned features
 
@@ -54,6 +54,22 @@ npm run owner:create -- --phone "98765 43210" --name "Full Name"
 ```
 
 It refuses if an Owner already exists (`--allow-additional` overrides) or if the number belongs to another account (`--promote-existing` promotes it and signs that account out everywhere). The action is recorded in the audit log.
+
+## Google Maps
+
+Maps appear on the attendee homepage (hotel) and on bus tracking pages (hotel, numbered stops, bus position). Without a key, the app shows addresses and "Open in Google Maps" links instead, so maps are optional for local work.
+
+1. Google Cloud Console → create a project → **Billing** → link a billing account.
+2. **APIs & Services → Library** → enable **Maps JavaScript API** (the only API the app uses).
+3. **APIs & Services → Credentials → Create credentials → API key**. Then **edit the key**:
+   - *Application restrictions*: **Websites**, add `http://localhost:3000/*` and your production domain (e.g. `https://your-app.vercel.app/*`).
+   - *API restrictions*: **Restrict key** → Maps JavaScript API only.
+4. Optional: **Google Maps Platform → Map management → Create Map ID** (JavaScript, vector). Without one the app uses Google's `DEMO_MAP_ID`, which is fine for development.
+5. Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (and `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`) in `.env` / Vercel, then restart `npm run dev` (these values are built into the page).
+
+**Cost and quotas:** dynamic map loads are billed per 1,000 loads after Google's monthly free usage; check https://mapsplatform.google.com/pricing/. A map loads only when someone opens a page with a map, and only once per page view. Set a **budget alert** (Billing → Budgets) and per-day **quota caps** (APIs & Services → Maps JavaScript API → Quotas) before the event. The key is visible in the browser by design; the website and API restrictions above are what stop others using it.
+
+**Status:** implemented with a tested fallback, but **not yet verified with a real API key**.
 
 ## Phone OTP provider (Twilio Verify)
 
@@ -119,4 +135,4 @@ See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the serv
 
 ## Current limitations
 
-No maps (only "Open in Google Maps" links), no live bus tracking or trip/status controls yet, and coordinators/attendees only have summary homepages. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
+No trips, status controls or live GPS yet: bus status and location appear only once Phase 5 lets coordinators start trips. Attendee pages refresh on demand (Refresh button), not automatically. Maps need a Google key (see above). Bus stops are shown as numbered markers; the app doesn't draw road routes. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.

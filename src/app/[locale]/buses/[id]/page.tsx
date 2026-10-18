@@ -44,6 +44,9 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
         ◀ {t("title")}
       </Link>
       <PageHeader title={`🚌 ${bus.label}`} />
+      <Link href={`/track/${bus.id}`} className="text-brand font-semibold underline">
+        👁 {t("attendeeView")}
+      </Link>
       {!bus.isActive && <Badge tone="danger">{tc("inactive")}</Badge>}
 
       <Section title={t("details")}>
