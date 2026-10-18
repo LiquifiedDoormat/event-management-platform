@@ -18,7 +18,7 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 | Layer | Location | Responsibility |
 | --- | --- | --- |
 | Routing / UI | `src/app/[locale]/…`, `src/components/` | Presentation only. Never the place where permissions are enforced. |
-| HTTP entry points | `src/app/api/…`, server actions | Parse + validate input (Zod), call a service, map result to a response. |
+| HTTP entry points | `src/app/api/…` (JSON, used by login), `src/features/*/actions.ts` (Server Actions, used by forms) | Parse + validate input (Zod), call a service, map result to a response / `ActionState`. |
 | Services | `src/server/services/` | Business rules and transactions. |
 | Policies | `src/server/policies/` | Authorization: role + relationship checks (e.g. "is this bus on the customer's hotel?"). |
 | Data access | `src/lib/db/prisma.ts` | Single Prisma client (driver adapter `@prisma/adapter-pg`). |
@@ -27,6 +27,14 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 | i18n | `src/i18n/`, `messages/{en,hi}.json` | next-intl; locale in the URL (`/en/…`, `/hi/…`), remembered in a cookie. |
 
 `src/proxy.ts` (Next.js 16's replacement for `middleware.ts`) only handles locale routing. It is **not** a security boundary.
+
+## Admin UI pattern
+
+- Pages are server components: `requireStaff()` → service call (policy enforced inside) → render. `orNotFound()` turns forbidden/missing into a 404.
+- Forms use `<ActionForm action={serverAction}>` (`src/components/ui/ActionForm.tsx`) with `<TextField>`/`<SelectField>`. It submits via `startTransition` (keeps typed input on validation errors), disables the button while pending, shows translated messages and field errors, and can ask for confirmation.
+- Directories use cursor pagination (`src/server/services/pagination.ts`, 25 per page) with search/filters in the URL query string.
+- Services throw `AppError` (`src/server/errors.ts`) with a stable `reason` translated under `errors.reasons.*`.
+- Only the `common`, `auth`, `nav`, `forms` and `errors` message namespaces are sent to the browser; server components translate everything else.
 
 ## Roles
 

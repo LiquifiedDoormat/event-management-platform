@@ -2,10 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { Noto_Sans, Noto_Sans_Devanagari } from "next/font/google";
 import { notFound } from "next/navigation";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
-import { getTranslations, setRequestLocale } from "next-intl/server";
+import { getMessages, getTranslations, setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { StaffNav } from "@/components/layout/StaffNav";
+import { roleHome } from "@/server/services/auth";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import "../globals.css";
 
@@ -15,6 +17,8 @@ const devanagari = Noto_Sans_Devanagari({
   variable: "--font-devanagari",
   display: "swap",
 });
+
+const CLIENT_NAMESPACES = ["common", "auth", "nav", "forms", "errors"] as const;
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
@@ -29,11 +33,14 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
   if (!hasLocale(routing.locales, locale)) notFound();
   setRequestLocale(locale);
   const user = await getCurrentUser();
+  // Only the namespaces client components use are sent to the browser.
+  const all = await getMessages();
+  const clientMessages = Object.fromEntries(CLIENT_NAMESPACES.map((ns) => [ns, all[ns]]));
 
   return (
     <html lang={locale} className={`${latin.variable} ${devanagari.variable}`}>
       <body className="min-h-dvh flex flex-col">
-        <NextIntlClientProvider>
+        <NextIntlClientProvider messages={clientMessages}>
           <header className="border-b border-line px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <AppName />
             <div className="flex flex-wrap items-center gap-2">
@@ -41,7 +48,9 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
               {user && <SignOutButton />}
             </div>
           </header>
-          <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-6">{children}</main>
+          {user && (user.role === "OWNER" || user.role === "ADMIN") && <StaffNav home={roleHome(user.role)} />}
+          {/* Bottom padding keeps content clear of the fixed mobile nav bar. */}
+          <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-6 pb-28 sm:pb-6">{children}</main>
         </NextIntlClientProvider>
       </body>
     </html>

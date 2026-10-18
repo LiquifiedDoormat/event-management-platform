@@ -2,7 +2,7 @@
 
 Mobile-first, English/Hindi web app for running event logistics: hotels, hotel coordinators, buses and attendees, with live bus tracking shared from the coordinator's phone.
 
-> **Status:** Phases 1–2 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control and basic role homepages. Management screens, maps and live tracking are **not built yet**. See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
+> **Status:** Phases 1–3 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, role homepages, and Owner/Admin management of hotels, buses (with stops), coordinators and people. Maps, the full attendee view and live tracking are **not built yet**. See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
 
 ## Planned features
 
@@ -119,4 +119,4 @@ See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the serv
 
 ## Current limitations
 
-Role homepages are basic summaries; there are no management screens, maps or live tracking yet. Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
+No maps (only "Open in Google Maps" links), no live bus tracking or trip/status controls yet, and coordinators/attendees only have summary homepages. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
