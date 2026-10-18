@@ -25,6 +25,14 @@ build/
 out/
 coverage/
 
+# --- Next.js / TypeScript / Vercel ---
+next-env.d.ts
+*.tsbuildinfo
+.vercel
+
+# --- Generated Prisma client (rebuilt by `npm install` / `prisma generate`) ---
+src/generated/
+
 # --- Logs ---
 *.log
 npm-debug.log*

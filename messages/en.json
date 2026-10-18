@@ -1,0 +1,25 @@
+{
+  "common": {
+    "appName": "Event Travel Desk",
+    "language": "Language",
+    "loading": "Loading…",
+    "home": "Home"
+  },
+  "home": {
+    "title": "Welcome",
+    "subtitle": "Your hotel, coordinator and bus information in one place.",
+    "signIn": "Sign in with your phone number",
+    "comingSoon": "Sign-in is being set up. Please check back soon."
+  },
+  "busStatus": {
+    "BOARDING": "Boarding",
+    "TO_HOTEL": "On the way to hotel",
+    "AT_HOTEL": "Reached hotel",
+    "TO_STOP": "On the way to bus stop",
+    "AT_STOP": "Reached bus stop"
+  },
+  "errors": {
+    "notFound": "Page not found.",
+    "generic": "Something went wrong. Please try again."
+  }
+}

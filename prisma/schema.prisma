@@ -1,0 +1,250 @@
+// Database schema for the Event Management Platform.
+// See docs/DATABASE.md for design notes. Constraints Prisma cannot express
+// (partial unique indexes, CHECK constraints) live in the migration SQL.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  COORDINATOR
+  CUSTOMER
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Locale {
+  en
+  hi
+}
+
+/// Operational status shown to attendees. Set by the trip coordinator.
+enum BusStatus {
+  BOARDING
+  TO_HOTEL
+  AT_HOTEL
+  TO_STOP
+  AT_STOP
+}
+
+/// Every person with an account: owner, admins, coordinators, attendees.
+model User {
+  id              String        @id @default(cuid())
+  /// E.164 format, e.g. +919876543210. Login identifier only.
+  phone           String        @unique
+  name            String
+  role            Role          @default(CUSTOMER)
+  status          AccountStatus @default(ACTIVE)
+  preferredLocale Locale        @default(en)
+  /// Attendee hotel allotment. Read on every request so reassignment applies immediately.
+  hotelId         String?
+  hotel           Hotel?        @relation("HotelAttendees", fields: [hotelId], references: [id], onDelete: Restrict)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  coordinatedHotel Hotel?           @relation("HotelCoordinator")
+  designatedBuses  Bus[]            @relation("BusCoordinator")
+  trips            Trip[]
+  statusEvents     BusStatusEvent[]
+  sessions         Session[]
+  auditLogs        AuditLog[]
+
+  @@index([role, status])
+  @@index([hotelId])
+  @@index([name])
+}
+
+model Hotel {
+  id            String   @id @default(cuid())
+  name          String
+  address       String
+  latitude      Float?
+  longitude     Float?
+  notes         String?
+  isActive      Boolean  @default(true)
+  /// One designated coordinator per hotel; a coordinator designates at most one hotel.
+  coordinatorId String?  @unique
+  coordinator   User?    @relation("HotelCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  attendees User[] @relation("HotelAttendees")
+  buses     Bus[]
+
+  @@index([isActive, name])
+}
+
+model Bus {
+  id            String   @id @default(cuid())
+  /// Display name or number, e.g. "Bus 12".
+  label         String
+  registration  String?  @unique
+  hotelId       String
+  hotel         Hotel    @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  /// Default coordinator for this bus; the active trip records who is actually on board.
+  coordinatorId String?
+  coordinator   User?    @relation("BusCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
+  routeNotes    String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  stops        BusStop[]
+  trips        Trip[]
+  location     BusLocation?
+  statusEvents BusStatusEvent[]
+
+  @@index([hotelId, isActive])
+  @@index([coordinatorId])
+}
+
+/// Ordered stops on a bus's current route. Editable as routes change.
+model BusStop {
+  id        String   @id @default(cuid())
+  busId     String
+  bus       Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  sequence  Int
+  name      String
+  address   String?
+  latitude  Float?
+  longitude Float?
+  /// Free-text schedule, e.g. "Departs 8:30 AM".
+  timeNote  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([busId, sequence])
+}
+
+/// One run of a bus with a coordinator on board. A bus has at most one active
+/// trip (endedAt IS NULL), enforced by a partial unique index in the migration.
+model Trip {
+  id              String    @id @default(cuid())
+  busId           String
+  bus             Bus       @relation(fields: [busId], references: [id], onDelete: Restrict)
+  coordinatorId   String
+  coordinator     User      @relation(fields: [coordinatorId], references: [id], onDelete: Restrict)
+  status          BusStatus @default(BOARDING)
+  statusChangedAt DateTime  @default(now())
+  /// Incremented on every status change; clients send it back to reject stale updates.
+  statusVersion   Int       @default(0)
+  sharingLocation Boolean   @default(false)
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+
+  statusEvents    BusStatusEvent[]
+  locationHistory LocationPoint[]
+  currentLocation BusLocation?
+
+  @@index([busId, endedAt])
+  @@index([coordinatorId, endedAt])
+}
+
+/// Latest known position per bus. One row per bus, overwritten in place.
+model BusLocation {
+  busId      String   @id
+  bus        Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  tripId     String   @unique
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  latitude   Float
+  longitude  Float
+  /// Reported accuracy in metres.
+  accuracy   Float?
+  /// Device timestamp; newer readings only replace older ones.
+  recordedAt DateTime
+  receivedAt DateTime @default(now())
+}
+
+/// Optional, sampled trip history. Pruned according to EventConfig.locationRetentionDays.
+model LocationPoint {
+  id         BigInt   @id @default(autoincrement())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  latitude   Float
+  longitude  Float
+  accuracy   Float?
+  recordedAt DateTime
+
+  @@index([tripId, recordedAt])
+  @@index([recordedAt])
+}
+
+model BusStatusEvent {
+  id          String    @id @default(cuid())
+  tripId      String
+  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  busId       String
+  bus         Bus       @relation(fields: [busId], references: [id], onDelete: Cascade)
+  status      BusStatus
+  changedById String?
+  changedBy   User?     @relation(fields: [changedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([tripId, createdAt])
+  @@index([busId, createdAt])
+}
+
+/// Server-side session. The cookie holds a random token; only its SHA-256 hash is stored.
+model Session {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  lastUsedAt DateTime  @default(now())
+  revokedAt  DateTime?
+  userAgent  String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Fixed-window counters for rate limiting (OTP requests, verification attempts).
+model RateLimitBucket {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+  expiresAt   DateTime
+
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  /// Changed fields only. Never store OTPs, tokens or secrets here.
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+/// Event-wide settings. Single row with id = 1.
+model EventConfig {
+  id                       Int      @id @default(1)
+  eventName                String   @default("Event")
+  /// Locations older than this are shown as stale.
+  staleLocationSeconds     Int      @default(120)
+  /// Detailed GPS history older than this is deleted.
+  locationRetentionDays    Int      @default(7)
+  /// Minimum seconds between stored history points per trip.
+  historySampleSeconds     Int      @default(30)
+  updatedAt                DateTime @updatedAt
+}

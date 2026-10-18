@@ -1,0 +1,57 @@
+# Architecture
+
+## Overview
+
+A single Next.js (App Router) application deployed on Vercel, backed by managed PostgreSQL and a managed realtime service. No microservices.
+
+```
+Phone browser ──HTTPS──► Next.js (Vercel, stateless)
+                           ├─ pages / server components (UI, per-role dashboards)
+                           ├─ route handlers + server actions (validated with Zod)
+                           │     └─ services → policies (authorization) → Prisma
+                           ├─► PostgreSQL (managed; pooled connections)
+                           └─► Pusher Channels (publish)  ──► subscribed browsers
+```
+
+## Layers
+
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| Routing / UI | `src/app/[locale]/…`, `src/components/` | Presentation only. Never the place where permissions are enforced. |
+| HTTP entry points | `src/app/api/…`, server actions | Parse + validate input (Zod), call a service, map result to a response. |
+| Services | `src/server/services/` | Business rules and transactions. |
+| Policies | `src/server/policies/` | Authorization: role + relationship checks (e.g. "is this bus on the customer's hotel?"). |
+| Data access | `src/lib/db/prisma.ts` | Single Prisma client (driver adapter `@prisma/adapter-pg`). |
+| Integrations | `src/lib/auth/otp/`, `src/lib/realtime/`, `src/lib/maps/` | Behind small interfaces so providers can be swapped. |
+| Config | `src/config/env.ts` | Zod-validated environment variables; fails fast. |
+| i18n | `src/i18n/`, `messages/{en,hi}.json` | next-intl; locale in the URL (`/en/…`, `/hi/…`), remembered in a cookie. |
+
+`src/proxy.ts` (Next.js 16's replacement for `middleware.ts`) only handles locale routing. It is **not** a security boundary.
+
+## Roles
+
+`OWNER`, `ADMIN`, `COORDINATOR`, `CUSTOMER`. The brief names three account types; coordinators are given their own role so their extra power (controlling an assigned bus trip) is granted explicitly rather than by making them Admins. A coordinator's scope is their designated hotel and the trips they are assigned to.
+
+## Key decisions
+
+| Decision | Choice | Why |
+| --- | --- | --- |
+| Framework | Next.js 16 App Router, TypeScript strict | Required stack; one deployable. `cacheComponents` is left off: almost every page is per-user and dynamic. |
+| ORM | Prisma 7 + `@prisma/adapter-pg` | Required stack; Prisma 7 uses driver adapters and `prisma.config.ts`. |
+| Phone OTP | Twilio Verify behind an `OtpProvider` interface; `dev` provider for local work | Server-side send + check, built-in OTP rate limiting, supports Indian numbers (Twilio handles DLT for Verify). MSG91 is a cheaper India-only alternative that fits the same interface. |
+| Sessions | Own `Session` table; random 256-bit token in an HttpOnly, Secure, SameSite=Lax cookie; only the SHA-256 hash is stored | Persistent login, instant revocation on sign-out or deactivation, no secrets in localStorage. |
+| Realtime | Pusher Channels private channels, behind a `RealtimePublisher` interface | Managed fan-out (one publish per update regardless of viewers); private-channel auth endpoint lets the server authorize each subscription. |
+| Maps | Google Maps JavaScript API via `@vis.gl/react-google-maps` | Required; lazy-loaded on map pages only. |
+| Rate limiting | Fixed-window counters in PostgreSQL (`RateLimitBucket`) | No extra service needed at this scale; replaceable by Redis later. |
+
+## GPS / realtime data flow (planned, Phase 5)
+
+1. Coordinator starts an authorized trip and taps **Start sharing**; the browser's `watchPosition` produces readings.
+2. The client throttles readings (≈5–10 s while moving, less when stationary) and POSTs them to `/api/locations`.
+3. The server authenticates, checks the user is the active trip's coordinator, validates coordinates, and upserts `BusLocation` only if `recordedAt` is newer than the stored one.
+4. History points are sampled (`EventConfig.historySampleSeconds`) into `LocationPoint` and pruned after `locationRetentionDays`.
+5. The server publishes a small payload `{busId, lat, lng, accuracy, recordedAt}` to `private-bus-{busId}`.
+6. Customers/admins subscribe; Pusher calls `/api/realtime/auth`, which allows only users whose hotel owns the bus (or admins/owner).
+7. On reconnect or page load, clients fetch the latest stored location over HTTP; anything older than `staleLocationSeconds` is shown as stale.
+
+Mobile browsers pause JavaScript when the screen locks or the tab is backgrounded, so tracking is only reliable while the coordinator keeps the page open. Continuous background tracking would need a native app.
