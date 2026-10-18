@@ -5,6 +5,8 @@ import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
+import { SignOutButton } from "@/components/auth/SignOutButton";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import "../globals.css";
 
 const latin = Noto_Sans({ subsets: ["latin"], variable: "--font-latin", display: "swap" });
@@ -22,22 +24,22 @@ export async function generateMetadata({ params }: LayoutProps<"/[locale]">): Pr
   return { title: t("appName") };
 }
 
-export function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }));
-}
-
 export default async function LocaleLayout({ children, params }: LayoutProps<"/[locale]">) {
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   setRequestLocale(locale);
+  const user = await getCurrentUser();
 
   return (
     <html lang={locale} className={`${latin.variable} ${devanagari.variable}`}>
       <body className="min-h-dvh flex flex-col">
         <NextIntlClientProvider>
-          <header className="border-b border-line px-4 py-3 flex items-center justify-between gap-4">
+          <header className="border-b border-line px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <AppName />
-            <LanguageSwitcher />
+            <div className="flex flex-wrap items-center gap-2">
+              <LanguageSwitcher />
+              {user && <SignOutButton />}
+            </div>
           </header>
           <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-6">{children}</main>
         </NextIntlClientProvider>

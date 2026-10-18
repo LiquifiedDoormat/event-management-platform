@@ -1,17 +1,10 @@
-import { useTranslations } from "next-intl";
-import { setRequestLocale } from "next-intl/server";
-import { use } from "react";
+import { redirect } from "@/i18n/navigation";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { roleHome } from "@/server/services/auth";
 
-export default function HomePage({ params }: PageProps<"/[locale]">) {
-  const { locale } = use(params);
-  setRequestLocale(locale);
-  const t = useTranslations("home");
-
-  return (
-    <section className="flex flex-col gap-4">
-      <h1 className="text-3xl font-bold">{t("title")}</h1>
-      <p className="text-lg text-muted">{t("subtitle")}</p>
-      <p className="rounded-lg border border-line p-4">{t("comingSoon")}</p>
-    </section>
-  );
+// Entry point: send signed-in users to their role's homepage, everyone else to login.
+export default async function IndexPage({ params }: PageProps<"/[locale]">) {
+  const { locale } = await params;
+  const user = await getCurrentUser();
+  redirect({ href: user ? roleHome(user.role) : "/login", locale });
 }
