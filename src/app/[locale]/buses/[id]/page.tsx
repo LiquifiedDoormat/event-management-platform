@@ -15,6 +15,7 @@ import {
   updateBusAction,
   updateStopAction,
 } from "@/features/admin/actions";
+import { correctStatusAction, endTripAction, startTripAction } from "@/features/trips/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField } from "@/components/ui/Fields";
 import { Badge, DetailList, MapsLink, PageHeader, Section } from "@/components/ui/Layout";
@@ -27,10 +28,11 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
   const bus = await orNotFound(getBus(user, id));
   const isOwner = can(user, "bus.reassignHotel");
   const canEditStops = can(user, "bus.editStops");
-  const [t, tc, ts, format, hotels, coordinators] = await Promise.all([
+  const [t, tc, ts, ttrip, format, hotels, coordinators] = await Promise.all([
     getTranslations("buses"),
     getTranslations("common"),
     getTranslations("busStatus"),
+    getTranslations("trip"),
     getFormatter(),
     isOwner ? hotelOptions(user) : Promise.resolve([]),
     isOwner ? coordinatorOptions(user) : Promise.resolve([]),
@@ -80,6 +82,28 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
           ]}
         />
       </Section>
+
+      {can(user, "trip.manage") && bus.isActive && (
+        <Section title={ttrip("staffTitle")}>
+          {trip ? (
+            <>
+              <ActionForm action={correctStatusAction} hidden={{ tripId: trip.id, version: String(trip.statusVersion) }} submitLabel={ttrip("correctStatus")} inline>
+                <SelectField
+                  name="status"
+                  label={ttrip("statusTitle")}
+                  defaultValue={trip.status}
+                  options={(["BOARDING", "TO_HOTEL", "AT_HOTEL", "TO_STOP", "AT_STOP"] as const).map((s) => ({ value: s, label: ts(s) }))}
+                />
+              </ActionForm>
+              <ActionForm action={endTripAction} hidden={{ tripId: trip.id }} submitLabel={`⏹ ${ttrip("endTrip")}`} confirmMessage={ttrip("confirmEnd")} tone="danger" />
+            </>
+          ) : bus.coordinator ? (
+            <ActionForm action={startTripAction} hidden={{ busId: bus.id }} submitLabel={`▶ ${ttrip("startTripFor", { name: bus.coordinator.name })}`} />
+          ) : (
+            <p>{ttrip("needsCoordinator")}</p>
+          )}
+        </Section>
+      )}
 
       <Section title={t("stops")}>
         {bus.stops.length === 0 ? (

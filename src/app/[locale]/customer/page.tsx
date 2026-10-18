@@ -1,12 +1,10 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { requireUser } from "@/lib/auth/current-user";
-import { locationFreshness } from "@/lib/transport/status";
-import { getCustomerHome } from "@/server/services/transport";
+import { getCustomerHome, toSnapshot } from "@/server/services/transport";
 import { LocationMap } from "@/components/maps/LocationMap";
 import { MapsLink, Section } from "@/components/ui/Layout";
-import { BusStatusPanel, LocationFreshnessNote } from "@/components/transport/StatusParts";
-import { RefreshButton } from "@/components/transport/RefreshButton";
+import { LiveBusSummary } from "@/components/transport/LiveBus";
 
 // Attendee homepage. Most time-sensitive first: buses, then hotel, then coordinator.
 export default async function CustomerHome({ params }: PageProps<"/[locale]/customer">) {
@@ -37,15 +35,10 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
             ) : (
               <ul className="flex flex-col gap-4">
                 {hotel.buses.map((b) => {
-                  const trip = b.trips[0];
-                  const recordedAt = b.location?.recordedAt ?? null;
                   return (
                     <li key={b.id} className="flex flex-col gap-2 rounded-lg border border-line p-3">
                       <p className="text-2xl font-bold">🚌 {b.label}</p>
-                      <BusStatusPanel status={trip?.status ?? null} since={trip?.statusChangedAt ?? null} size="compact" />
-                      {trip && (
-                        <LocationFreshnessNote freshness={locationFreshness(recordedAt, settings.staleLocationSeconds)} recordedAt={recordedAt} />
-                      )}
+                      <LiveBusSummary busId={b.id} initial={toSnapshot(b.id, b.trips[0], b.location)} staleSeconds={settings.staleLocationSeconds} />
                       <Link
                         href={`/track/${b.id}`}
                         className="min-h-12 inline-flex items-center justify-center rounded-lg bg-brand text-brand-ink text-lg font-semibold px-4"
@@ -57,9 +50,6 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
                 })}
               </ul>
             )}
-            <div>
-              <RefreshButton label={tt("refresh")} busyLabel={tt("refreshing")} />
-            </div>
           </Section>
 
           <Section title={t("yourHotel")}>

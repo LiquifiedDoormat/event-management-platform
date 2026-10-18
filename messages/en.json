@@ -85,7 +85,13 @@
       "duplicatePhone": "Another account already uses this phone number.",
       "notAttendee": "Only attendees have a hotel allotment.",
       "personOnTrip": "This coordinator is on an active bus trip. End the trip first.",
-      "busOnTrip": "This bus is on an active trip. End the trip first."
+      "busOnTrip": "This bus is on an active trip. End the trip first.",
+      "busInactive": "This bus is inactive.",
+      "busHasNoCoordinator": "This bus has no coordinator. Assign one first.",
+      "coordinatorOnTrip": "This coordinator is already on another trip.",
+      "staleStatus": "The status was changed on another device. The latest status is now shown; please try again.",
+      "tripEnded": "This trip has ended.",
+      "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings."
     },
     "notFoundHelp": "It may have moved, or you may not have access to it."
   },
@@ -254,8 +260,6 @@
     "locationLive": "Location updated {ago}.",
     "locationStale": "Last location was {ago}. It may be out of date.",
     "viewBus": "{count, plural, =0 {See bus details} one {See route (# stop)} other {See route (# stops)}}",
-    "refresh": "Refresh",
-    "refreshing": "Refreshing…",
     "busHere": "Bus (current location)",
     "busLastSeen": "Bus (last known location, may be out of date)",
     "back": "Back",
@@ -263,9 +267,10 @@
     "sharingOff": "The coordinator is not sharing the bus location at the moment.",
     "openBusInMaps": "Open bus location in Google Maps",
     "openLastSeenInMaps": "Open last known location in Google Maps",
-    "lastChecked": "Page updated at {time}.",
     "onBoard": "Coordinator on this bus",
-    "callCoordinator": "Call {name}"
+    "callCoordinator": "Call {name}",
+    "liveOn": "Live updates on",
+    "polling": "Updates every 15 seconds"
   },
   "maps": {
     "hotelMap": "Map showing {name}",
@@ -274,5 +279,38 @@
     "failed": "The map could not be loaded. Use the address and links below.",
     "unavailable": "Map not available. Use the links below to open places in Google Maps.",
     "openInMaps": "Open in Google Maps"
+  },
+  "trip": {
+    "back": "Back",
+    "activeTrip": "Your current trip",
+    "openControls": "Open trip controls",
+    "startTrip": "Start trip",
+    "startTripFor": "Start trip with {name}",
+    "oneTripAtATime": "You can run one trip at a time. End the current trip to start another.",
+    "viewAsAttendee": "See what attendees see",
+    "statusTitle": "Bus status",
+    "current": "Current",
+    "currentSince": "Set at {time} ({ago}). Tap a button to change it.",
+    "statusSaved": "Status changed to “{status}”.",
+    "sharingTitle": "Share bus location",
+    "startSharing": "Start sharing location",
+    "stopSharing": "Stop sharing",
+    "sharingOn": "Sharing location",
+    "sharingStarting": "Starting… allow location access if your phone asks.",
+    "sharingOff": "Location is not being shared",
+    "lastSent": "Last sent {ago}",
+    "accuracy": "accurate to about {meters} m",
+    "gpsUnavailable": "GPS signal not available right now. It will keep trying.",
+    "networkRetry": "No connection. Your location will be sent again automatically.",
+    "denied": "Location access was blocked.",
+    "deniedHelp": "Open your browser's site settings for this website, allow Location, then tap \"Start sharing location\" again.",
+    "unsupported": "This browser cannot share location.",
+    "keepOpen": "Keep this page open and the screen on while the bus is moving. Sharing stops if the phone locks or you switch apps.",
+    "screenKeptOn": "(The screen will stay on while sharing.)",
+    "endTrip": "End trip",
+    "confirmEnd": "End this trip? Location sharing will stop and attendees will see the bus is not running.",
+    "staffTitle": "Trip",
+    "correctStatus": "Correct status",
+    "needsCoordinator": "Assign a coordinator to this bus before starting a trip."
   }
 }

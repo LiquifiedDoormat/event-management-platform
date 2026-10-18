@@ -49,6 +49,14 @@ Nothing is hard-deleted through the app except bus stops (route configuration); 
 
 Mutations from pages go through Server Actions (`src/features/admin/actions.ts`), which Next.js only accepts from the same origin; every action calls a service that re-checks the policy. Directory and detail pages for hotels, buses, coordinators and people are Owner/Admin only; a 404 is shown for missing or forbidden records.
 
+## Live tracking
+
+- `POST /api/locations`: session + same-origin + Zod; accepted only from the coordinator of the trip's **active** trip (`canSendLocation`); others get 403, ended trips 409. Device timestamps more than 2 min in the future are rejected; old/out-of-order readings are ignored; 30 readings/min per trip.
+- Status changes: trip coordinator, or Owner/Admin as an audited correction. `statusVersion` prevents stale overwrites.
+- Realtime: private channels only; `/api/realtime/auth` signs a subscription only for users who may view that bus. Payloads contain no personal data (bus id, status, coordinates, timestamps).
+- `GET /api/buses/{id}/live`: same access rule; 404 for anything not viewable.
+- GPS history is sampled (default every 30 s) and pruned after 7 days (`npm run ops:prune`); the live position is deleted when a trip ends.
+
 ## HTTP headers
 
 Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (geolocation on our own origin only), `Strict-Transport-Security`. A Content-Security-Policy will be added once the Google Maps and Pusher origins are wired in. API responses send `Cache-Control: no-store`.

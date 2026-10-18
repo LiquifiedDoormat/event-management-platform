@@ -1,50 +1,31 @@
-import { getFormatter, getTranslations, setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { requireUser } from "@/lib/auth/current-user";
 import { orNotFound } from "@/lib/utils/page";
-import { locationFreshness } from "@/lib/transport/status";
 import type { MapPoint } from "@/lib/maps/config";
 import { isStaff } from "@/server/policies";
 import { roleHome } from "@/server/services/auth";
-import { getTrackedBus } from "@/server/services/transport";
-import { LocationMap } from "@/components/maps/LocationMap";
+import { getTrackedBus, toSnapshot } from "@/server/services/transport";
 import { MapsLink, Section } from "@/components/ui/Layout";
-import { BusStatusPanel, LocationFreshnessNote } from "@/components/transport/StatusParts";
-import { RefreshButton } from "@/components/transport/RefreshButton";
+import { LiveBusDetail } from "@/components/transport/LiveBus";
 
-// Attendee-facing view of one bus: status, position, stops. Access: policy canViewBus.
+// Attendee-facing view of one bus: live status, position, stops. Access: policy canViewBus.
 export default async function TrackBusPage({ params }: PageProps<"/[locale]/track/[id]">) {
   const { locale, id } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale);
   const { bus, settings } = await orNotFound(getTrackedBus(user, id));
-  const [tt, tm, tb, format] = await Promise.all([
-    getTranslations("transport"),
-    getTranslations("maps"),
-    getTranslations("buses"),
-    getFormatter(),
-  ]);
+  const [tt, tm, tb] = await Promise.all([getTranslations("transport"), getTranslations("maps"), getTranslations("buses")]);
   const trip = bus.trips[0];
-  const freshness = locationFreshness(bus.location?.recordedAt, settings.staleLocationSeconds);
 
-  const points: MapPoint[] = [];
+  const staticPoints: MapPoint[] = [];
   if (bus.hotel.latitude !== null && bus.hotel.longitude !== null) {
-    points.push({ id: "hotel", lat: bus.hotel.latitude, lng: bus.hotel.longitude, kind: "hotel", glyph: "H", title: bus.hotel.name });
+    staticPoints.push({ id: "hotel", lat: bus.hotel.latitude, lng: bus.hotel.longitude, kind: "hotel", glyph: "H", title: bus.hotel.name });
   }
   for (const s of bus.stops) {
     if (s.latitude !== null && s.longitude !== null) {
-      points.push({ id: s.id, lat: s.latitude, lng: s.longitude, kind: "stop", glyph: String(s.sequence), title: s.name });
+      staticPoints.push({ id: s.id, lat: s.latitude, lng: s.longitude, kind: "stop", glyph: String(s.sequence), title: s.name });
     }
-  }
-  if (bus.location && freshness !== "none") {
-    points.push({
-      id: "bus",
-      lat: bus.location.latitude,
-      lng: bus.location.longitude,
-      kind: freshness === "live" ? "bus" : "busStale",
-      glyph: "🚌",
-      title: freshness === "live" ? tt("busHere") : tt("busLastSeen"),
-    });
   }
 
   return (
@@ -60,28 +41,14 @@ export default async function TrackBusPage({ params }: PageProps<"/[locale]/trac
         </p>
       </div>
 
-      <BusStatusPanel status={trip?.status ?? null} since={trip?.statusChangedAt ?? null} />
-
-      <Section title={tt("location")}>
-        <LocationFreshnessNote freshness={freshness} recordedAt={bus.location?.recordedAt ?? null} />
-        {trip && !trip.sharingLocation && <p className="text-muted">{tt("sharingOff")}</p>}
-        <LocationMap
-          label={tm("busMap", { bus: bus.label })}
-          loadingText={tm("loading")}
-          failedText={tm("failed")}
-          points={points}
-          fallback={<p className="text-muted">{tm("unavailable")}</p>}
-        />
-        {bus.location && freshness !== "none" && (
-          <MapsLink lat={bus.location.latitude} lng={bus.location.longitude} label={freshness === "live" ? tt("openBusInMaps") : tt("openLastSeenInMaps")} />
-        )}
-        <p className="text-muted">
-          {tt("lastChecked", { time: format.dateTime(new Date(), { timeStyle: "short" }) })}
-        </p>
-        <div>
-          <RefreshButton label={tt("refresh")} busyLabel={tt("refreshing")} />
-        </div>
-      </Section>
+      <LiveBusDetail
+        busId={bus.id}
+        initial={toSnapshot(bus.id, trip, bus.location)}
+        staleSeconds={settings.staleLocationSeconds}
+        staticPoints={staticPoints}
+        mapLabel={tm("busMap", { bus: bus.label })}
+        mapTexts={{ loading: tm("loading"), failed: tm("failed"), unavailable: tm("unavailable") }}
+      />
 
       {trip && (
         <Section title={tt("onBoard")}>

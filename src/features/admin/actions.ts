@@ -4,12 +4,7 @@
 // authenticates → validates with Zod → calls a service (which enforces the
 // policy) → refreshes pages. Next.js rejects cross-origin Server Action calls.
 
-import { revalidatePath } from "next/cache";
-import { getLocale } from "next-intl/server";
 import { z } from "zod";
-import { redirect } from "@/i18n/navigation";
-import { getCurrentUser } from "@/lib/auth/current-user";
-import { fieldErrors, formToObject } from "@/lib/validation/common";
 import {
   busCreateInput,
   busInput,
@@ -20,40 +15,14 @@ import {
   statusSchema,
   stopInput,
 } from "@/lib/validation/entities";
-import { AppError } from "@/server/errors";
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
-import type { SessionUser } from "@/lib/auth/session";
+import { run } from "@/features/run-action";
 import type { ActionState } from "./action-state";
 
 const id = z.string().min(1).max(40);
 const optionalRef = z.preprocess((v) => (v === "" ? null : v), z.string().min(1).max(40).nullable());
-
-type Handler = (user: SessionUser, data: Record<string, string>) => Promise<string | void>;
-
-/**
- * Wraps a handler with auth, error mapping and page refresh. If the handler
- * returns a path, the user is redirected there (locale-aware).
- */
-async function run(form: FormData, handler: Handler): Promise<ActionState> {
-  const user = await getCurrentUser();
-  if (!user) return { status: "error", message: "errors.unauthenticated" };
-  let target: string | void;
-  try {
-    target = await handler(user, formToObject(form));
-  } catch (err) {
-    if (err instanceof z.ZodError) return { status: "error", message: "forms.fixErrors", fieldErrors: fieldErrors(err) };
-    if (err instanceof AppError) {
-      return { status: "error", message: err.reason ? `errors.reasons.${err.reason}` : `errors.${err.code}` };
-    }
-    console.error("[admin action] failed", (err as Error).name, (err as Error).message);
-    return { status: "error", message: "errors.generic" };
-  }
-  revalidatePath("/", "layout");
-  if (target) redirect({ href: target, locale: await getLocale() });
-  return { status: "ok", message: "forms.saved" };
-}
 
 // ---- Hotels ---------------------------------------------------------------
 
