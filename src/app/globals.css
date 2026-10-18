@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Restrained, high-contrast palette. Colour always accompanies text, never replaces it. */
+@theme {
+  --color-surface: #ffffff;
+  --color-ink: #111827;
+  --color-muted: #4b5563;
+  --color-line: #d1d5db;
+  --color-brand: #1d4ed8;
+  --color-brand-ink: #ffffff;
+  --color-ok: #15803d;
+  --color-warn: #b45309;
+  --color-danger: #b91c1c;
+  --font-sans: var(--font-latin), var(--font-devanagari), system-ui, sans-serif;
+}
+
+html {
+  /* Larger base size for readability on phones. */
+  font-size: 112.5%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+}
