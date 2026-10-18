@@ -86,7 +86,8 @@
       "notAttendee": "Only attendees have a hotel allotment.",
       "personOnTrip": "This coordinator is on an active bus trip. End the trip first.",
       "busOnTrip": "This bus is on an active trip. End the trip first."
-    }
+    },
+    "notFoundHelp": "It may have moved, or you may not have access to it."
   },
   "nav": {
     "label": "Main menu",
@@ -205,7 +206,8 @@
     "none": "No coordinator",
     "deactivate": "Deactivate bus",
     "activate": "Reactivate bus",
-    "confirmDeactivate": "Deactivate this bus? It will be hidden from attendees."
+    "confirmDeactivate": "Deactivate this bus? It will be hidden from attendees.",
+    "attendeeView": "See what attendees see"
   },
   "coordinators": {
     "title": "Coordinators",
@@ -244,5 +246,33 @@
     "deactivate": "Deactivate account",
     "activate": "Reactivate account",
     "confirmDeactivate": "Deactivate {name}? They will be signed out and cannot sign in."
+  },
+  "transport": {
+    "notRunning": "This bus is not running right now.",
+    "statusSince": "Since {time} ({ago})",
+    "locationNone": "Live location is not available yet.",
+    "locationLive": "Location updated {ago}.",
+    "locationStale": "Last location was {ago}. It may be out of date.",
+    "viewBus": "{count, plural, =0 {See bus details} one {See route (# stop)} other {See route (# stops)}}",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "busHere": "Bus (current location)",
+    "busLastSeen": "Bus (last known location, may be out of date)",
+    "back": "Back",
+    "location": "Where is the bus?",
+    "sharingOff": "The coordinator is not sharing the bus location at the moment.",
+    "openBusInMaps": "Open bus location in Google Maps",
+    "openLastSeenInMaps": "Open last known location in Google Maps",
+    "lastChecked": "Page updated at {time}.",
+    "onBoard": "Coordinator on this bus",
+    "callCoordinator": "Call {name}"
+  },
+  "maps": {
+    "hotelMap": "Map showing {name}",
+    "busMap": "Map showing {bus}, its hotel and stops",
+    "loading": "Loading map…",
+    "failed": "The map could not be loaded. Use the address and links below.",
+    "unavailable": "Map not available. Use the links below to open places in Google Maps.",
+    "openInMaps": "Open in Google Maps"
   }
 }

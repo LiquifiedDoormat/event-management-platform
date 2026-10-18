@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { requireUser } from "@/lib/auth/current-user";
 import { getCoordinatorOverview } from "@/server/services/dashboard";
+import { Link } from "@/i18n/navigation";
 
 export default async function CoordinatorHome({ params }: PageProps<"/[locale]/coordinator">) {
   const { locale } = await params;
@@ -37,7 +38,10 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
           <ul className="flex flex-col gap-1">
             {buses.map((b) => (
               <li key={b.id} className="text-lg">
-                {b.label} · <span className="text-muted">{b.hotel.name}</span>
+                <Link href={`/track/${b.id}`} className="text-brand font-semibold underline">
+                  🚌 {b.label}
+                </Link>{" "}
+                · <span className="text-muted">{b.hotel.name}</span>
               </li>
             ))}
           </ul>

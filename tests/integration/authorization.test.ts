@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
 import { canSendLocation, canStartTrip, canViewBus, canViewHotel, canViewPerson } from "@/server/policies";
 import { loadScope } from "@/server/policies/scope";
-import { getCustomerOverview } from "@/server/services/dashboard";
+import { getCustomerHome } from "@/server/services/transport";
 import { createTwoHotels, createUser, hasTestDb, resetDb } from "./helpers";
 
 describe.skipIf(!hasTestDb)("relationship-based authorization", () => {
@@ -31,14 +31,14 @@ describe.skipIf(!hasTestDb)("relationship-based authorization", () => {
     expect(canViewHotel(moved, scope, hotelA.id)).toBe(false);
     expect(canViewHotel(moved, scope, hotelB.id)).toBe(true);
     expect(canViewBus(moved, scope, busB)).toBe(true);
-    expect((await getCustomerOverview(moved))?.name).toBe("Hotel B");
+    expect((await getCustomerHome({ ...moved, status: "ACTIVE" })).hotel?.name).toBe("Hotel B");
   });
 
   it("customer overview exposes only the coordinator's name and phone", async () => {
     const { guestA, coordA } = await createTwoHotels();
-    const overview = await getCustomerOverview(guestA);
-    expect(overview?.coordinator).toEqual({ name: coordA.name, phone: coordA.phone });
-    expect(overview?.buses.map((b) => b.label)).toEqual(["Bus A"]);
+    const { hotel } = await getCustomerHome(guestA);
+    expect(hotel?.coordinator).toEqual({ name: coordA.name, phone: coordA.phone });
+    expect(hotel?.buses.map((b) => b.label)).toEqual(["Bus A"]);
   });
 
   it("lets a coordinator operate only their own buses", async () => {

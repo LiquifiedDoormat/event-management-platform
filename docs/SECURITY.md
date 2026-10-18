@@ -55,7 +55,8 @@ Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Ref
 
 ## Personal data
 
-- Customers never see other attendees. They see only their own hotel coordinator's name and phone number.
+- Customers never see other attendees. They see their own hotel coordinator's name and phone number, and, on a bus of their hotel that is on an active trip, the name and phone of the coordinator accompanying it (operational contact).
+- The Google Maps browser key is public by design; protect it with HTTP-referrer and API restrictions, a budget alert and quota caps (README › Google Maps).
 - GPS history is sampled and deleted after `EventConfig.locationRetentionDays` (default 7). Only the latest position is kept per bus.
 - Rate-limit keys are SHA-256 hashes, not raw phone numbers or IPs.
 

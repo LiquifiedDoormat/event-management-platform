@@ -1,34 +1,85 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
+import { Link } from "@/i18n/navigation";
 import { requireUser } from "@/lib/auth/current-user";
-import { getCustomerOverview } from "@/server/services/dashboard";
+import { locationFreshness } from "@/lib/transport/status";
+import { getCustomerHome } from "@/server/services/transport";
+import { LocationMap } from "@/components/maps/LocationMap";
+import { MapsLink, Section } from "@/components/ui/Layout";
+import { BusStatusPanel, LocationFreshnessNote } from "@/components/transport/StatusParts";
+import { RefreshButton } from "@/components/transport/RefreshButton";
 
+// Attendee homepage. Most time-sensitive first: buses, then hotel, then coordinator.
 export default async function CustomerHome({ params }: PageProps<"/[locale]/customer">) {
   const { locale } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale, ["CUSTOMER"]);
-  const [t, tc, hotel] = await Promise.all([
+  const [t, tt, tm, { settings, hotel }] = await Promise.all([
     getTranslations("dashboard"),
-    getTranslations("common"),
-    getCustomerOverview(user),
+    getTranslations("transport"),
+    getTranslations("maps"),
+    getCustomerHome(user),
   ]);
 
   return (
     <section className="flex flex-col gap-5">
-      <h1 className="text-3xl font-bold">{t("customerTitle")}</h1>
-      <p className="text-lg">{t("welcome", { name: user.name })}</p>
+      <div>
+        <h1 className="text-3xl font-bold">{t("welcome", { name: user.name })}</h1>
+        {settings.eventName && <p className="text-lg text-muted">{settings.eventName}</p>}
+      </div>
 
       {!hotel ? (
-        <p className="rounded-lg border-2 border-warn p-4">{t("noHotel")}</p>
+        <p className="rounded-lg border-2 border-warn p-4 text-lg">{t("noHotel")}</p>
       ) : (
         <>
-          <section className="rounded-lg border border-line p-4">
-            <h2 className="text-xl font-semibold">{t("yourHotel")}</h2>
-            <p className="text-lg font-semibold">{hotel.name}</p>
-            <p className="text-muted">{hotel.address}</p>
-          </section>
+          <Section title={t("yourBuses")}>
+            {hotel.buses.length === 0 ? (
+              <p>{t("noBuses")}</p>
+            ) : (
+              <ul className="flex flex-col gap-4">
+                {hotel.buses.map((b) => {
+                  const trip = b.trips[0];
+                  const recordedAt = b.location?.recordedAt ?? null;
+                  return (
+                    <li key={b.id} className="flex flex-col gap-2 rounded-lg border border-line p-3">
+                      <p className="text-2xl font-bold">🚌 {b.label}</p>
+                      <BusStatusPanel status={trip?.status ?? null} since={trip?.statusChangedAt ?? null} size="compact" />
+                      {trip && (
+                        <LocationFreshnessNote freshness={locationFreshness(recordedAt, settings.staleLocationSeconds)} recordedAt={recordedAt} />
+                      )}
+                      <Link
+                        href={`/track/${b.id}`}
+                        className="min-h-12 inline-flex items-center justify-center rounded-lg bg-brand text-brand-ink text-lg font-semibold px-4"
+                      >
+                        {tt("viewBus", { count: b._count.stops })} ▶
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div>
+              <RefreshButton label={tt("refresh")} busyLabel={tt("refreshing")} />
+            </div>
+          </Section>
 
-          <section className="rounded-lg border border-line p-4 flex flex-col gap-2">
-            <h2 className="text-xl font-semibold">{t("yourCoordinator")}</h2>
+          <Section title={t("yourHotel")}>
+            <p className="text-xl font-semibold">{hotel.name}</p>
+            <p>{hotel.address}</p>
+            {hotel.latitude !== null && hotel.longitude !== null && (
+              <>
+                <LocationMap
+                  label={tm("hotelMap", { name: hotel.name })}
+                  loadingText={tm("loading")}
+                  failedText={tm("failed")}
+                  points={[{ id: "hotel", lat: hotel.latitude, lng: hotel.longitude, kind: "hotel", glyph: "H", title: hotel.name }]}
+                  fallback={null}
+                />
+                <MapsLink lat={hotel.latitude} lng={hotel.longitude} label={tm("openInMaps")} />
+              </>
+            )}
+          </Section>
+
+          <Section title={t("yourCoordinator")}>
             {hotel.coordinator ? (
               <>
                 <p className="text-lg">{hotel.coordinator.name}</p>
@@ -42,25 +93,9 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
             ) : (
               <p>{t("noCoordinator")}</p>
             )}
-          </section>
-
-          <section className="rounded-lg border border-line p-4">
-            <h2 className="text-xl font-semibold">{t("yourBuses")}</h2>
-            {hotel.buses.length === 0 ? (
-              <p>{t("noBuses")}</p>
-            ) : (
-              <ul className="flex flex-col gap-1">
-                {hotel.buses.map((b) => (
-                  <li key={b.id} className="text-lg">
-                    🚌 {b.label}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          </Section>
         </>
       )}
-      <p className="text-muted">{tc("comingSoon")}</p>
     </section>
   );
 }

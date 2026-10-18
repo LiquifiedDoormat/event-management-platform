@@ -52,6 +52,13 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 | Maps | Google Maps JavaScript API via `@vis.gl/react-google-maps` | Required; lazy-loaded on map pages only. |
 | Rate limiting | Fixed-window counters in PostgreSQL (`RateLimitBucket`) | No extra service needed at this scale; replaceable by Redis later. |
 
+## Attendee views (Phase 4)
+
+- `/[locale]/customer`: transport first (each bus: status panel, location freshness, link to tracking), then hotel (map + address + Maps link), then coordinator (call button). Data: `getCustomerHome` (scoped by the user's current `hotelId`).
+- `/[locale]/track/[busId]`: status, location freshness, map (hotel, numbered stops, bus marker green if live / grey if stale), coordinator on board, ordered stops. Data: `getTrackedBus` (policy `canViewBus`; inactive buses hidden from non-staff; anything not allowed → 404). Used by attendees, coordinators and staff ("See what attendees see").
+- `src/lib/transport/status.ts`: `STATUS_KIND` (boarding/moving/arrived) and `locationFreshness` (live/stale/none against `EventConfig.staleLocationSeconds`). Stale positions are always labelled and drawn grey.
+- Maps: `src/components/maps/LocationMap.tsx` loads `@vis.gl/react-google-maps` with `next/dynamic` (browser only, only on pages with a map). No key, a placeholder key, or a load/auth failure → text fallback. No polylines: straight lines between stops would misrepresent roads.
+
 ## GPS / realtime data flow (planned, Phase 5)
 
 1. Coordinator starts an authorized trip and taps **Start sharing**; the browser's `watchPosition` produces readings.
