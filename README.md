@@ -80,6 +80,7 @@ See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the serv
 
 ## More documentation
 
+- [docs/MASTER_PROMPT.md](docs/MASTER_PROMPT.md): full project requirements
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): structure, decisions, GPS data flow
 - [docs/DATABASE.md](docs/DATABASE.md): data model, constraints, migration policy
 - [docs/SECURITY.md](docs/SECURITY.md): auth, secrets, headers, privacy

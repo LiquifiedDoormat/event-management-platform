@@ -10,4 +10,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Project handover
 
-Read `PROJECT_MEMORY.md` first: it is the canonical record of project state, decisions and next steps.
+Read `docs/MASTER_PROMPT.md` (full requirements) and `PROJECT_MEMORY.md` (canonical record of project state, decisions and next steps) before making changes.

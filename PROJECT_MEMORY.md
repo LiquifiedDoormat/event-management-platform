@@ -1,6 +1,8 @@
 # PROJECT_MEMORY.md — canonical AI / developer handover
 
-_Last updated: 2026-10-18 (end of Phase 1), branch `feat/phase-1-foundation`._
+_Last updated: 2026-10-18 (end of Phase 1 + master prompt saved), branch `feat/phase-1-foundation`, PR #1 open._
+
+Requirements: [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md) is the full, canonical project brief.
 
 The repository's verified state takes precedence over this file. If they disagree, fix this file first.
 
@@ -22,12 +24,13 @@ The repository's verified state takes precedence over this file. If they disagre
 - **Partially implemented:** none.
 - **Not started:** auth/OTP/sessions, authorization policies, Owner bootstrap, all entity CRUD/directories/detail pages, dashboards, trips/status, GPS, realtime, maps, load tests, deployment.
 - **Broken/blocked:** nothing broken. External accounts (Twilio, Pusher, Google Maps, managed Postgres, Vercel) don't exist yet; they're needed only from Phase 2/4/5/7.
-- **CI:** `.github/workflows/ci.yml` written but **not yet run on GitHub** (first run happens when this branch is pushed / PR opened).
+- **CI:** `.github/workflows/ci.yml` passed on GitHub for PR #1 (commit 5cb6138).
 
 ## 3. Repository Structure
 
 ```
 .github/workflows/ci.yml   CI: npm ci → migrate deploy → lint → typecheck → test → build (Postgres service)
+docs/MASTER_PROMPT.md      Full project requirements (canonical brief, verbatim). Read before any work.
 docs/                      ARCHITECTURE.md, DATABASE.md, SECURITY.md (DEPLOYMENT/OPERATIONS come in Phase 7)
 messages/en.json, hi.json  All UI strings (next-intl). Keep keys identical in both files.
 prisma/schema.prisma       Data model (generator output → src/generated/prisma, git-ignored)
@@ -74,7 +77,8 @@ Planned locations (create when needed): auth → `src/lib/auth/`, authorization 
 | Dev seed | Verified | Ran twice; 13 users both times (idempotent) |
 | Env validation | Verified | Unit tests (4) |
 | Phone normalization | Verified | Unit tests (10) |
-| CI workflow | **Unverified** | Not yet run on GitHub |
+| CI workflow | Verified | GitHub Actions `check` job passed on PR #1 (migrate deploy, lint, typecheck, test, build) |
+| Master prompt in repo | Done | `docs/MASTER_PROMPT.md`: all 25 sections (1–24 + 1A), 12 memory-log sections, 7 phases present |
 
 ## 6. Outstanding Tasks (prioritized)
 
@@ -94,7 +98,7 @@ Planned locations (create when needed): auth → `src/lib/auth/`, authorization 
 
 ## 7. Current Development State
 
-- **Last completed task:** Phase 1 foundation (this commit).
+- **Last completed task:** Phase 1 foundation; master prompt saved to `docs/MASTER_PROMPT.md`.
 - **In progress:** nothing.
 - **Next recommended task:** Phase 2, starting with the `OtpProvider` interface + `dev` provider, sessions and the login page, then authorization policies with integration tests.
 - **Incomplete changes:** none.
@@ -144,10 +148,12 @@ Env var names and where to get values: see `.env.example` and README.
   - Dependencies: next 16.4.2, react 19.3, next-intl 4, @prisma/client + @prisma/adapter-pg 7.10.1, zod 4, libphonenumber-js, server-only; dev: prisma 7.10.1, typescript 5, eslint 9 + eslint-config-next, tailwindcss 4 + @tailwindcss/turbopack, vitest 4, tsx, dotenv.
   - Schema: migration `20261018133949_init` (all models above + partial unique index + CHECK constraints).
   - Decisions: COORDINATOR role; Twilio Verify; Pusher; DB-backed rate limiting; own session table; cacheComponents off; Indian numbers must be mobile.
+  - Pushed; PR #1 (`feat/phase-1-foundation` → `main`) opened with Auto-fix monitoring on.
+- **2026-10-18 — Master prompt saved** (`feat/phase-1-foundation`): added `docs/MASTER_PROMPT.md` (verbatim brief, Markdown formatting only); linked from README, AGENTS.md and this file. Secret-hygiene audit: `.env` ignored and never committed; no secret patterns in any commit; `.env.example` placeholders only; CI `ci:ci` credentials exist only in the workflow's throwaway Postgres service container.
 
 ## 12. Instructions for the Next AI
 
-1. Read this file, then `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `AGENTS.md`.
+1. Read `docs/MASTER_PROMPT.md` (requirements), this file, then `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `AGENTS.md`.
 2. Run `git status`, `git log --oneline -10`, and check the current branch.
 3. Verify state: `npm install && npm run db:up && npm run db:migrate && npm run check && npm run build`.
 4. Constraints: never commit `.env` or secrets; never force-push; never reset/drop the production DB; enforce authorization on the server; don't mark features verified without running checks; keep `messages/en.json` and `hi.json` keys in sync; update this file after each milestone.
