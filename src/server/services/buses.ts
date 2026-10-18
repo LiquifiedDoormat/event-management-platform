@@ -87,7 +87,7 @@ export async function getBus(actor: Actor, id: string) {
       trips: {
         where: { endedAt: null },
         take: 1,
-        select: { id: true, status: true, statusChangedAt: true, coordinator: { select: { id: true, name: true } } },
+        select: { id: true, status: true, statusVersion: true, statusChangedAt: true, coordinator: { select: { id: true, name: true } } },
       },
       location: { select: { latitude: true, longitude: true, recordedAt: true } },
     },

@@ -1,6 +1,6 @@
 # PROJECT_MEMORY.md — canonical AI / developer handover
 
-_Last updated: 2026-10-18 (end of Phase 4), branch `feat/phase-4-customer` (from `main` after PRs #1–#3 merged)._
+_Last updated: 2026-10-18 (end of Phase 5), branch `feat/phase-5-live-tracking` (from `main` after PRs #1–#4 merged)._
 
 Requirements: [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md) is the full, canonical project brief.
 
@@ -14,17 +14,17 @@ The repository's verified state takes precedence over this file. If they disagre
 - **Account types (roles):** `OWNER` (everything incl. reassignment, roles, config), `ADMIN` (view/manage operational records, no Owner powers), `COORDINATOR` (their designated hotel + buses/trips they are assigned to; controls bus status and GPS sharing), `CUSTOMER` (attendee: own profile + own hotel, its coordinator and its buses only).
   - The brief lists three account types; `COORDINATOR` is a separate role so coordinators get least-privilege trip control instead of Admin rights. See `docs/ARCHITECTURE.md`.
 - **Scale target:** 16,000+ registered users, 2,000+ concurrent. Not yet tested.
-- **Stack:** Next.js 16.4 (App Router, TypeScript strict, Turbopack), Tailwind CSS 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. OTP: Twilio Verify (REST, no SDK) behind `OtpProvider`. Maps: Google Maps JS API via `@vis.gl/react-google-maps` 1.10.1. Planned: Pusher Channels (realtime), k6, Playwright.
+- **Stack:** Next.js 16.4 (App Router, TypeScript strict, Turbopack), Tailwind CSS 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. OTP: Twilio Verify (REST, no SDK) behind `OtpProvider`. Maps: Google Maps JS API via `@vis.gl/react-google-maps` 1.10.1. Realtime: Pusher Channels (`pusher` 5.3.4 server, `pusher-js` 8.6.0 client) behind `RealtimePublisher`, with polling fallback. Planned: k6, Playwright.
 - **Package manager:** npm (commit `package-lock.json`; don't mix managers). Node ≥ 22 (developed on Node 26).
 
 ## 2. Current Project Status
 
-- **Stage:** Phase 4 (customer experience) complete on `feat/phase-4-customer`. Phase 5 not started.
-- **Completed:** Phases 1–3 (foundation, OTP auth, sessions, policies, Owner bootstrap, admin directories/management). Phase 4: attendee homepage (transport first: per-bus status panel + location freshness + link; hotel with map; coordinator call button), bus tracking page `/track/[busId]` (status, freshness, map with hotel/stops/bus, coordinator on board, ordered stops) for attendees, coordinators and staff, Google Maps component with no-key/auth-failure fallback, translated 404 page, coordinator homepage links to tracking.
-- **Partially implemented:** Attendee pages refresh on demand only (Refresh button); live updates come with Phase 5. Owner audit-log viewer and event settings page not built.
-- **Not started:** trips (start/end), status controls, GPS sharing, realtime (Pusher), retention job, load tests, deployment.
-- **Broken/blocked:** nothing broken. Google Maps and Twilio are implemented but **unverified with real keys** (no accounts yet). Pusher, managed Postgres, Vercel not set up.
-- **PRs:** #1, #2, #3 merged into `main`. Phase 4 PR not yet opened.
+- **Stage:** Phase 5 (trips, status, live GPS, realtime) complete on `feat/phase-5-live-tracking`. Phase 6 not started.
+- **Completed:** Phases 1–4; Phase 5: trips service (start/end/status/sharing/location), `POST /api/locations` with ordering + sampling + rate limit, `GET /api/buses/[id]/live`, `/api/realtime/auth`, Pusher publisher (disabled when not configured), coordinator homepage (start trip / open controls), coordinator trip screen (large status buttons, GPS sharing with throttling, heartbeat, retry, Wake Lock, permission errors, end trip), staff trip controls on the bus page (start for designated coordinator, correct status, end), live attendee views (homepage summaries + tracking page) via Pusher or 15 s polling, retention script `npm run ops:prune`.
+- **Partially implemented:** Owner audit-log viewer and event-settings page not built (EventConfig editable only in DB).
+- **Not started:** Phase 6 polish (translation audit, accessibility pass), Phase 7 (deployment, load tests, CSP, scheduled prune).
+- **Broken/blocked:** nothing broken. **Unverified with real services/devices:** phone GPS on a real Android/iPhone, Pusher delivery, Google Maps, Twilio OTP (no accounts/devices tested yet).
+- **PRs:** #1–#4 merged into `main`. Phase 5 PR not yet opened.
 
 ## 3. Repository Structure
 
@@ -54,17 +54,31 @@ src/app/[locale]/hotels/        page (directory), new/, [id]/ (detail + edit + O
 src/app/[locale]/buses/         page, new/, [id]/ (detail, stops editor, edit, Owner reassignments)
 src/app/[locale]/coordinators/  page (directory), [id]/ (PersonDetail, role must be COORDINATOR)
 src/app/[locale]/people/        page (search + role/hotel/status filters), new/, [id]/ (PersonDetail)
-src/app/[locale]/track/[id]/    Attendee-facing bus view (status, freshness, map, stops); any role, policy-checked
+src/app/[locale]/track/[id]/    Attendee-facing bus view (live status, freshness, map, stops); any role, policy-checked
+src/app/[locale]/coordinator/trip/[id]/  Coordinator trip screen (TripControls); own active trip only
+src/app/api/locations/          POST GPS reading (coordinator of active trip only)
+src/app/api/buses/[id]/live/    GET live snapshot (polling fallback), canViewBus
+src/app/api/realtime/auth/      Pusher private-channel auth, canViewBus
 src/app/[locale]/not-found.tsx  Translated 404 (also used for forbidden records)
 src/components/auth/            LoginForm, SignOutButton
 src/components/layout/          LanguageSwitcher, StaffNav (Owner/Admin nav), StatTile, EventOverview
 src/components/ui/              ActionForm (+ field-error context), Fields (TextField, SelectField), Layout (PageHeader, Section, Badge, ListCard, DetailList, MapsLink, EmptyState), Directory (SearchForm, FilterSelect, Pagination)
 src/components/{hotels,buses,people}/  HotelFields, BusFields/StopFields, PersonDetail
 src/components/maps/            LocationMap (dynamic, fallback when no key), LocationMapInner (APIProvider, AdvancedMarker+Pin)
-src/components/transport/       StatusParts (BusStatusPanel, LocationFreshnessNote), RefreshButton
+src/components/transport/LiveBus.tsx  LiveBusSummary (homepage) + LiveBusDetail (tracking: status, freshness, map, mode)
+src/components/trips/TripControls.tsx  Status buttons (statusVersion), GPS sharing panel, end trip
+src/hooks/useGeolocationSharing.ts  watchPosition + heartbeat, throttle (10 s / 5 s & 25 m), retry backoff, Wake Lock, resume after reload
+src/hooks/useBusLive.ts         Pusher subscription (lazy pusher-js) + polling (15 s, 60 s when live), newest-location merge
+src/lib/realtime/types.ts       BusLiveSnapshot, busChannel/parseBusChannel, pusherPublic (client-safe)
+src/lib/realtime/publisher.ts   RealtimePublisher (Pusher | disabled), setRealtimeForTests
+src/features/trips/actions.ts   Trip Server Actions (direct calls for TripControls; form actions for staff)
+src/features/run-action.ts      Shared `run()` wrapper for form Server Actions (moved out of admin/actions.ts)
+src/server/services/trips.ts    startTrip, endTrip, changeStatus, setSharing, recordLocation, activeTripsFor
+src/server/services/maintenance.ts  pruneOldData (retention)
+scripts/prune.ts                npm run ops:prune
 src/lib/maps/config.ts          mapsApiKey (placeholder "<…>" = unset), mapId (default DEMO_MAP_ID), MapPoint type
 src/lib/transport/status.ts     STATUS_KIND, STATUS_ICON, locationFreshness(live/stale/none)
-src/server/services/transport.ts  getEventSettings, getCustomerHome, getTrackedBus
+src/server/services/transport.ts  getEventSettings, getCustomerHome, getTrackedBus, toSnapshot, getBusSnapshot, assertCanViewBus, getLiveBus, publishBus
 src/features/admin/             actions.ts (all form Server Actions), action-state.ts (ActionState type)
 src/lib/validation/             common.ts (field schemas, formToObject, fieldErrors), entities.ts (hotel, bus, stop, person schemas)
 src/lib/utils/page.ts           param(), requireStaff(), orNotFound()
@@ -86,12 +100,12 @@ src/server/services/auth.ts     requestOtp, verifyOtp, logout, roleHome
 src/server/services/dashboard.ts  getEventOverview (staff), getCoordinatorOverview
 tests/setup.ts                  Points DATABASE_URL at TEST_DATABASE_URL (name must contain test/ci) or a dead URL
 tests/global-setup.ts           prisma migrate deploy on the test DB
-tests/unit/                     env, phone, policies, transport
-tests/integration/              auth, authorization, create-owner, admin-services, transport (+ helpers.ts: resetDb, fixtures)
+tests/unit/                     env, phone, policies, transport, realtime
+tests/integration/              auth, authorization, create-owner, admin-services, transport, trips, maintenance (+ helpers.ts)
 AGENTS.md                       Next.js agent rules (auto-maintained block) + pointer to this file
 ```
 
-Planned locations: realtime → `src/lib/realtime/`, trips → `src/server/services/trips.ts` + `src/features/trips/`, GPS client hook → `src/hooks/useGeolocationSharing.ts`.
+Planned locations: Owner audit/settings pages → `src/app/[locale]/owner/{audit,settings}`; load tests → `tests/load/` (k6).
 
 ## 4. Architecture and Data Model
 
@@ -104,7 +118,7 @@ Planned locations: realtime → `src/lib/realtime/`, trips → `src/server/servi
 - **Sessions:** cookie `__Host-session` (prod) / `session` (dev), HttpOnly, SameSite=Lax, 365-day cookie; validity = DB `expiresAt` (30 days of inactivity, renewed ≤ once/day). User row re-read every request.
 - **API envelope:** `{ok:true,data}` / `{ok:false,error:{code}}`, `Cache-Control: no-store`. Codes in `src/lib/api/response.ts`; client maps them to `auth.errors.*` strings.
 - **Attendee views (Phase 4):** see `docs/ARCHITECTURE.md` › Attendee views. `getTrackedBus` returns 404 for buses outside scope or inactive (non-staff). Attendees see the trip coordinator's name + phone for their own buses. Stale locations (older than `EventConfig.staleLocationSeconds`, default 120 s) are labelled and drawn grey; never shown as current.
-- **GPS flow (planned, Phase 5):** see `docs/ARCHITECTURE.md`. Policies `canSendLocation` / `canChangeStatus` / `canStartTrip` already exist and are tested. Phase 5 should make `/track` and `/customer` update live and keep the Refresh button as a fallback.
+- **Trips/GPS/realtime (Phase 5):** see `docs/ARCHITECTURE.md` › Trips, status and GPS (diagram + rules). Key invariants: one active trip per bus and per coordinator; only newer `recordedAt` replaces `BusLocation`; `BusLocation` deleted on trip end; `statusVersion` optimistic concurrency; every change → `publishBus(snapshot)`; realtime failures never fail writes; viewers fall back to polling.
 
 ## 5. Completed Features
 
@@ -127,36 +141,41 @@ Planned locations: realtime → `src/lib/realtime/`, trips → `src/server/servi
 | Relationship scoping (customer/coordinator) | Verified | Integration tests (other hotel/bus/attendee denied; hotel reassignment immediate; GPS only from trip coordinator) |
 | Owner bootstrap script | Verified | Integration tests (first owner, refuse second, --allow-additional, --promote-existing, bad input) + manual run on dev DB |
 | Role homepages | Verified (basic) | Browser (customer, en + hi), curl (owner) |
-| CI workflow | Verified (Phases 1–3) | Phase 4 run pending |
+| CI workflow | Verified (Phases 1–4) | Phase 5 run pending |
 | Attendee homepage + bus tracking page | Verified | 7 integration tests (`transport.test.ts`: own bus visible with trip/location/stops; other hotel's bus and unknown IDs → not_found; hotel reassignment immediate; inactive bus hidden from attendee, visible to admin; coordinator scope; inactive coordinator omitted; no-hotel case) + 3 unit tests (freshness, status grouping). Browser as attendee at 375px with a temporary demo trip (removed afterwards): status panel, stale-location warning, Hindi tracking page, other hotel's bus → translated 404 |
 | Google Maps rendering | **Implemented, unverified** | No API key yet; the no-key fallback path was verified in the browser |
+| Trips/status/GPS server logic | Verified | 11 integration tests (`trips.test.ts`): start permissions, one trip per bus/coordinator, staff start for designated coordinator, statusVersion conflicts, double-tap no-op, staff correction audited, GPS only from trip coordinator, out-of-order/duplicate ignored, future clock rejected, old ignored, history sampling, end trip clears live position and blocks updates, sharing permissions, live snapshot scoping |
+| Retention cleanup | Verified | `maintenance.test.ts` + ran `npm run ops:prune` on dev DB |
+| Coordinator trip screen + GPS hook | Verified with **simulated** GPS | Browser at 375px: start trip, status buttons (saved + highlighted), sharing with a geolocation shim (moving coordinates): 5 uploads/30 s while moving; permission-denied path shown on reload (pane blocks real geolocation); network loss during dev-server restart recovered |
+| Live attendee updates (polling) | Verified | Browser tracking page updated position, status ("Reached bus stop") and trip end without reload; curl: other hotel's attendee 404 on live endpoint, 403 posting locations; realtime auth returns 503 when Pusher not configured |
+| Real phone GPS (Android/iPhone) | **Unverified** | Needs a device test on HTTPS (geolocation requires a secure context; localhost is allowed) |
+| Pusher live delivery | **Implemented, unverified** | No Pusher app yet |
 | Hotel/bus/stop/person services + policies | Verified | 23 integration tests (`admin-services.test.ts`): CRUD, owner-only actions denied to admins, customers/coordinators denied, coordinator move, deactivation guards, duplicate phone/registration, stops ordering, pagination + search, session revocation |
 | Admin UI (directories, detail pages, forms) | Verified (manual) | Browser as Owner at 375px: dashboard, hotels list, hotel detail, validation errors keep input + show field messages, successful save, add stop (form resets), Hindi people directory. curl: Admin sees edit/stop controls but no Owner-only buttons; Owner sees all; customer redirected from staff pages |
 
 ## 6. Outstanding Tasks (prioritized)
 
 - [x] Phase 1 — Foundation
-- [x] Phase 2 — Auth & authorization (Twilio live test pending; needs account)
+- [x] Phase 2 — Auth & authorization (Twilio live test pending)
 - [x] Phase 3 — Core administration
-  - [ ] Follow-ups: Owner audit-log viewer; event settings page (`config.update`: event name, stale threshold, retention); collapsible filters on phones
-- [x] Phase 4 — Customer experience (Maps live test pending; needs key)
-- [ ] **Phase 5 — Trips, status and live GPS** (next; highest priority feature)
-  - [ ] `src/server/services/trips.ts`: startTrip (partial unique index → conflict), endTrip, changeStatus (statusVersion check against stale submissions, BusStatusEvent row), setSharing; Server Actions + coordinator trip control page (large status buttons)
-  - [ ] `POST /api/locations`: auth + `canSendLocation` + Zod (lat/lng/accuracy/recordedAt), conditional upsert of `BusLocation` (newer `recordedAt` only), sampled `LocationPoint` per `historySampleSeconds`, rate limit per trip
-  - [ ] Client `useGeolocationSharing` (watchPosition, ~5–10 s throttle when moving, Wake Lock where supported, clear permission/error states, stop on trip end)
-  - [ ] `RealtimePublisher` interface + Pusher implementation + `/api/realtime/auth` (private-bus-{id} channels authorized via `canViewBus`); no-op publisher when Pusher isn't configured, with polling fallback on `/track`
-  - [ ] Live updates on `/track` and `/customer`; retention cleanup script
-  - [ ] Tests: trip lifecycle, status permissions, stale/out-of-order location rejection, channel auth
-- [ ] Phase 6 — Translation audit, accessibility pass, mobile polish.
-- [ ] Phase 7 — Deployment, DEPLOYMENT.md/OPERATIONS.md, k6 load tests, CSP, cleanup job, Twilio + Maps live tests.
+  - [ ] Follow-ups: Owner audit-log viewer; event settings page (`config.update`: event name, stale threshold, retention, history sampling); collapsible filters on phones
+- [x] Phase 4 — Customer experience (Maps live test pending)
+- [x] Phase 5 — Trips, status and live GPS (real-device GPS + Pusher live tests pending)
+- [ ] **Phase 6 — Bilingual UI and accessibility** (next)
+  - [ ] Translation audit (all user-visible strings in en/hi; no hard-coded English like "—", seed demo names excluded)
+  - [ ] Accessibility pass: headings order, focus management after actions, aria-live usage, contrast check, keyboard-only run of every flow
+  - [ ] Mobile polish: collapsible filters, sticky primary actions on trip screen, tap targets audit
+  - [ ] Owner audit-log page and event settings page (bilingual)
+  - [ ] Verify all dashboards on phone + desktop widths
+- [ ] Phase 7 — Deployment (Vercel + managed Postgres + Pusher + Twilio + Maps keys), DEPLOYMENT.md/OPERATIONS.md, scheduled `ops:prune`, k6 load tests, CSP header, real-device GPS test, production smoke test.
 
 ## 7. Current Development State
 
-- **Last completed task:** Phase 4 (branch `feat/phase-4-customer`).
+- **Last completed task:** Phase 5 (branch `feat/phase-5-live-tracking`).
 - **In progress:** nothing.
-- **Next recommended task:** Phase 5 (trips, status controls, GPS, realtime).
-- **Incomplete changes:** none. The temporary demo trip used for browser testing was deleted from the local dev DB.
-- **Check results (2026-10-18, local):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 85/85 (9 files), `npm run build` ✅.
+- **Next recommended task:** Phase 6 (translation/accessibility/mobile polish + Owner audit/settings pages), or jump to Phase 7 deployment if real-world testing is more urgent.
+- **Incomplete changes:** none. The local dev DB contains one ended demo trip on Bus 1 (with 9 history points) from browser testing; harmless, pruned after 7 days.
+- **Check results (2026-10-18, local):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 103/103 (12 files), `npm run build` ✅.
 
 ## 8. Setup and Execution
 
@@ -178,10 +197,10 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 
 | Service | Status |
 | --- | --- |
-| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#3 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
+| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#4 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
 | PostgreSQL | Local Docker only. Managed provider not chosen/created. |
 | Phone OTP | `dev` provider locally. Twilio Verify implemented; **account not created, untested**. Env: `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Setup steps + pricing notes in README. |
-| Realtime (Pusher Channels) | Not set up. |
+| Realtime (Pusher Channels) | Integrated (`PUSHER_APP_ID`, `PUSHER_SECRET`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`); **no app yet, untested**. Without it the app polls every 15 s. Setup + cost notes in README › Live updates. |
 | Google Maps Platform | Integrated (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, optional `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`); **no key yet, untested with Google**. Setup, restrictions, billing and quota steps in README › Google Maps. |
 | Vercel | Not set up. |
 
@@ -202,7 +221,10 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 - Dropdown option lists are capped at 500 (hotels/coordinators).
 - npm 12 (local) blocks dependency install scripts by default (`npm install-scripts ls` lists prisma, esbuild, @swc/core, unrs-resolver, …). The app builds and runs without them; CI uses Node 22/npm 10, which runs them. Approve with `npm install-scripts approve <pkg>` only if something breaks.
 - `.env` copied from `.env.example` contains `<…>` placeholders for Maps keys; `src/lib/maps/config.ts` treats those as unset.
-- Relative times ("5 minutes ago") are rendered on the server at request time; they don't tick until the page refreshes (Phase 5 live updates).
+- **Dev server reload loop:** running `next build` or `next typegen` (part of `npm run typecheck`/`check`) while `npm run dev` is running corrupted the dev cache once, causing endless page reloads. Fix: stop dev, `rm -rf .next`, restart. Prefer stopping the dev server before `npm run check`/`build`. Newly added nested API route folders may also need a dev-server restart.
+- GPS sharing needs the coordinator page open and on screen (browser limitation); Wake Lock helps where supported (not on all iOS versions). Background tracking would need a native app.
+- Geolocation requires HTTPS in production (secure context).
+- Pusher-js is loaded lazily only when `NEXT_PUBLIC_PUSHER_KEY` is set.
 - No Content-Security-Policy yet. Load/scale targets unverified.
 
 ## 11. Change History
@@ -228,10 +250,18 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
   - No schema changes.
   - Decisions: one tracking route for all roles (policy-checked); attendees see the on-board coordinator's phone; stale = grey marker + warning; no polylines between stops; maps loaded only client-side on map pages; no key → text fallback.
 
+- **2026-10-18 — Phase 5 trips, status, live GPS** (`feat/phase-5-live-tracking`):
+  - Added deps: `pusher@5.3.4`, `pusher-js@8.6.0`.
+  - Added: `src/server/services/{trips,maintenance}.ts`, `src/lib/realtime/{types,publisher}.ts`, `src/hooks/{useGeolocationSharing,useBusLive}.ts`, `src/components/{trips/TripControls,transport/LiveBus}.tsx`, `src/features/{run-action.ts,trips/actions.ts}`, routes `api/locations`, `api/buses/[id]/live`, `api/realtime/auth`, page `[locale]/coordinator/trip/[id]`, `scripts/prune.ts` (`npm run ops:prune`), tests `tests/integration/{trips,maintenance}.test.ts`, `tests/unit/realtime.test.ts`.
+  - Changed: `services/transport.ts` (snapshots, publish, assertCanViewBus; customer home loads full location), `services/buses.ts` (statusVersion), `lib/api/response.ts` (`failFromError`, new codes), `features/admin/actions.ts` (uses shared `run`), pages customer/track/coordinator/buses[id], layout (client namespaces + `busStatus`, `transport`, `trip`), messages en/hi (`trip.*`, transport live/polling, new error reasons; removed refresh strings), README (Live updates, Coordinator guide, Data retention), ARCHITECTURE, SECURITY.
+  - Removed: `components/transport/{StatusParts,RefreshButton}.tsx` (replaced by live client components).
+  - No schema changes.
+  - Decisions: one snapshot publish per change; polling fallback 15 s (60 s safety when live); location send throttle 10 s / 5 s+25 m, 30 s heartbeat; stale threshold from EventConfig; trip end deletes live position; staff may start trips only for the bus's designated coordinator.
+
 ## 12. Instructions for the Next AI
 
 1. Read `docs/MASTER_PROMPT.md` (requirements), this file, then `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DATABASE.md`, `AGENTS.md`.
-2. Run `git status`, `git log --oneline -10`, `git branch -a`; check whether the Phase 4 PR has merged.
+2. Run `git status`, `git log --oneline -10`, `git branch -a`; check whether the Phase 5 PR has merged.
 3. Verify state: `npm install && npm run db:up && npm run db:migrate && npm run check && npm run build`.
 4. Constraints: never commit `.env` or secrets; never force-push; never reset/drop the production DB; every endpoint follows the request pattern in §4 and uses `src/server/policies`; don't mark features verified without running checks; keep `messages/en.json` and `hi.json` keys in sync; update this file after each milestone.
-5. **Next concrete action:** Phase 5 step 1: `src/server/services/trips.ts` (startTrip/endTrip/changeStatus/setSharing with policies, statusVersion, BusStatusEvent, audit) + integration tests, then the coordinator trip-control page with large status buttons.
+5. **Next concrete action:** Phase 6 step 1: Owner audit-log page (`can(actor, "audit.view")`, paginated, filter by entity/actor) and event settings page (`config.update`: eventName, staleLocationSeconds, locationRetentionDays, historySampleSeconds with DB bounds), both en/hi, with tests; then the translation/accessibility audit.

@@ -59,14 +59,23 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 - `src/lib/transport/status.ts`: `STATUS_KIND` (boarding/moving/arrived) and `locationFreshness` (live/stale/none against `EventConfig.staleLocationSeconds`). Stale positions are always labelled and drawn grey.
 - Maps: `src/components/maps/LocationMap.tsx` loads `@vis.gl/react-google-maps` with `next/dynamic` (browser only, only on pages with a map). No key, a placeholder key, or a load/auth failure → text fallback. No polylines: straight lines between stops would misrepresent roads.
 
-## GPS / realtime data flow (planned, Phase 5)
+## Trips, status and GPS (Phase 5)
 
-1. Coordinator starts an authorized trip and taps **Start sharing**; the browser's `watchPosition` produces readings.
-2. The client throttles readings (≈5–10 s while moving, less when stationary) and POSTs them to `/api/locations`.
-3. The server authenticates, checks the user is the active trip's coordinator, validates coordinates, and upserts `BusLocation` only if `recordedAt` is newer than the stored one.
-4. History points are sampled (`EventConfig.historySampleSeconds`) into `LocationPoint` and pruned after `locationRetentionDays`.
-5. The server publishes a small payload `{busId, lat, lng, accuracy, recordedAt}` to `private-bus-{busId}`.
-6. Customers/admins subscribe; Pusher calls `/api/realtime/auth`, which allows only users whose hotel owns the bus (or admins/owner).
-7. On reconnect or page load, clients fetch the latest stored location over HTTP; anything older than `staleLocationSeconds` is shown as stale.
+```
+Coordinator phone                         Server                                  Attendee browsers
+useGeolocationSharing ──POST /api/locations──► recordLocation()                    useBusLive (per bus)
+ watchPosition + 30 s heartbeat            auth + canSendLocation + Zod            ◄── Pusher private-bus-{id} "update"
+ send ≥10 s, or ≥5 s & moved ≥25 m         conditional upsert BusLocation          ◄── or GET /api/buses/{id}/live
+ retry w/ backoff, Wake Lock               (only newer recordedAt wins)                 every 15 s (60 s when live)
+TripControls ──Server Actions──► trips.ts   sampled LocationPoint (historySample)
+ big status buttons + statusVersion         publishBus(snapshot) ──► RealtimePublisher (Pusher | disabled)
+```
+
+- `src/server/services/trips.ts`: `startTrip` (one active trip per bus via partial unique index + explicit check; one per coordinator), `endTrip` (deletes the live `BusLocation`, keeps history), `changeStatus` (optimistic `statusVersion`; stale submissions rejected; `BusStatusEvent` row; staff corrections audited), `setSharing`, `recordLocation` (rejects future clocks > 2 min, ignores readings > 30 min old or out of order; 30/min per trip limit).
+- Snapshot sent to browsers (`BusLiveSnapshot`): `{busId, trip:{status,statusChangedAt,sharingLocation}|null, location:{lat,lng,accuracy,recordedAt}|null}`, ~200 bytes, one publish per change regardless of viewer count.
+- `src/lib/realtime/publisher.ts`: `RealtimePublisher` interface; Pusher implementation; disabled implementation when env is missing. Publishing failures are logged and never fail the write.
+- `/api/realtime/auth`: Pusher channel auth → `assertCanViewBus` (same rule as `/track`).
+- Viewers merge updates so an older location never replaces a newer one; relative times tick client-side (`useNow`).
+- `scripts/prune.ts` / `pruneOldData()`: retention for history points, sessions, rate-limit rows.
 
 Mobile browsers pause JavaScript when the screen locks or the tab is backgrounded, so tracking is only reliable while the coordinator keeps the page open. Continuous background tracking would need a native app.

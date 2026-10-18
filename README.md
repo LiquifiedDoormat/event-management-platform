@@ -2,7 +2,7 @@
 
 Mobile-first, English/Hindi web app for running event logistics: hotels, hotel coordinators, buses and attendees, with live bus tracking shared from the coordinator's phone.
 
-> **Status:** Phases 1–4 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management of hotels, buses (with stops), coordinators and people, and the attendee experience (transport-first homepage, bus tracking page with stops, Google Maps with a no-key fallback). Trips, status controls and live GPS are **not built yet** (Phase 5). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
+> **Status:** Phases 1–5 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management, the attendee experience with maps, and live transport: coordinators start/end trips, set the bus status with large buttons and share GPS from their phone; attendees see status and position update live. Real-phone GPS, Pusher, Google Maps and Twilio still need **live verification with real accounts/devices** (see below). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
 
 ## Planned features
 
@@ -71,6 +71,31 @@ Maps appear on the attendee homepage (hotel) and on bus tracking pages (hotel, n
 
 **Status:** implemented with a tested fallback, but **not yet verified with a real API key**.
 
+## Live updates (Pusher Channels)
+
+Status changes and bus positions are pushed to attendees through Pusher private channels (`private-bus-{busId}`); each subscription is authorized by `/api/realtime/auth` using the same rules as the tracking page. **Without Pusher the app still works:** pages check for updates every 15 seconds instead.
+
+1. Create an account at https://pusher.com → **Channels** → create an app (cluster close to your users, e.g. `ap2` Mumbai).
+2. App Keys: copy `app_id`, `key`, `secret`, `cluster`.
+3. Set `PUSHER_APP_ID`, `PUSHER_SECRET`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`, then restart the server.
+
+**Cost:** Pusher plans are priced by concurrent connections and messages per day (https://pusher.com/channels/pricing). Each open attendee page holds one connection; each location update (≈ every 5–10 s per moving bus) is one message per subscriber. For 2,000 concurrent viewers you need a paid plan sized for ≥2,000 connections; estimate messages as `buses × updates/minute × viewers per bus × minutes`. The app sends one small message per change (no full history).
+
+**Status:** implemented and tested with the polling fallback; **not yet verified against a real Pusher app.**
+
+## Coordinator: running a trip
+
+1. Sign in with the coordinator's number → **Start trip** on their bus (staff can also start one for the bus's designated coordinator from the bus page).
+2. Tap the large status buttons (Boarding, On the way to hotel, …). If two phones disagree, the older one is told the status changed and shown the latest.
+3. Tap **Start sharing location** and allow location access. Keep the page open with the screen on: phones pause websites when locked or in the background. The app asks the phone to keep the screen on (Wake Lock) where supported.
+4. Tap **End trip** when done; the live position is removed and attendees see "not running".
+
+**GPS limits:** a normal website cannot share location reliably in the background. If continuous background tracking becomes a requirement, it needs a native app (or a dedicated GPS device).
+
+## Data retention
+
+Run `npm run ops:prune` daily (e.g. a scheduled job) to delete GPS history older than `EventConfig.locationRetentionDays` (default 7), old sessions and expired rate-limit counters. The latest bus position is kept only while a trip is active.
+
 ## Phone OTP provider (Twilio Verify)
 
 1. Create a Twilio account at https://www.twilio.com and upgrade it (trial accounts can only text verified numbers).
@@ -92,7 +117,7 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 | `APP_URL` | now | Your site's URL |
 | `POSTGRES_PASSWORD`, `DATABASE_URL`, `TEST_DATABASE_URL` | now | Local: you choose. Production: your managed Postgres provider |
 | `OTP_PROVIDER`, `TWILIO_*` | now (`dev` locally) | Twilio Console → Verify → Services |
-| `PUSHER_*`, `NEXT_PUBLIC_PUSHER_*` | Phase 5 | Pusher dashboard → Channels app → App Keys |
+| `PUSHER_*`, `NEXT_PUBLIC_PUSHER_*` | optional (polling without) | Pusher dashboard → Channels app → App Keys |
 | `NEXT_PUBLIC_GOOGLE_MAPS_*` | Phase 4 | Google Cloud Console → APIs & Services → Credentials |
 
 ## Commands
@@ -103,6 +128,7 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 | `npm run check` | Lint + type-check + all tests |
 | `npm run test:unit` / `npm run test:integration` | Unit tests / integration tests (need `TEST_DATABASE_URL`) |
 | `npm run owner:create -- --phone … --name …` | Create the first Owner |
+| `npm run ops:prune` | Data-retention cleanup (run daily) |
 | `npm run build` / `npm start` | Production build / serve it |
 | `npm run db:migrate` | Create/apply migrations (development) |
 | `npm run db:deploy` | Apply migrations (production/CI) |
@@ -118,6 +144,7 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 - **`Invalid environment configuration: …`**: a variable in `.env` is missing or malformed; the message names it.
 - **Database connection refused**: start Docker Desktop, then `npm run db:up`.
 - **`POSTGRES_PASSWORD` required**: set it in `.env` before `npm run db:up`.
+- **Pages keep reloading in development**: stop `npm run dev`, delete `.next`, start again. Avoid running `npm run build` or `npm run typecheck` (which runs `next typegen`) while the dev server is running.
 - **Integration tests skipped**: set `TEST_DATABASE_URL` (its database name must contain `test` or `ci`).
 - **Password mismatch after changing `.env`**: the Docker volume keeps the first password. Change it back, or `docker compose down -v` to recreate the local DB (this deletes local data).
 
@@ -135,4 +162,4 @@ See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the serv
 
 ## Current limitations
 
-No trips, status controls or live GPS yet: bus status and location appear only once Phase 5 lets coordinators start trips. Attendee pages refresh on demand (Refresh button), not automatically. Maps need a Google key (see above). Bus stops are shown as numbered markers; the app doesn't draw road routes. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
+GPS sharing works only while the coordinator's page is open and on screen. Without Pusher, attendee pages update every 15 s. Maps need a Google key. Bus stops are shown as numbered markers; the app doesn't draw road routes. No Owner screens yet for the audit log or event settings. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.

@@ -4,14 +4,17 @@ import type { SessionUser } from "@/lib/auth/session";
 import { canViewBus, isStaff, type Actor } from "@/server/policies";
 import { loadScope } from "@/server/policies/scope";
 import { notFound } from "@/server/errors";
+import { realtime } from "@/lib/realtime/publisher";
+import type { BusLiveSnapshot } from "@/lib/realtime/types";
+import type { BusStatus } from "@/generated/prisma/enums";
 
-const DEFAULT_CONFIG = { eventName: "", staleLocationSeconds: 120 };
+const DEFAULT_CONFIG = { eventName: "", staleLocationSeconds: 120, historySampleSeconds: 30 };
 
 /** Event-wide display settings (single row; falls back to defaults if not created yet). */
 export async function getEventSettings() {
   const config = await prisma.eventConfig.findUnique({
     where: { id: 1 },
-    select: { eventName: true, staleLocationSeconds: true },
+    select: { eventName: true, staleLocationSeconds: true, historySampleSeconds: true },
   });
   return config ?? DEFAULT_CONFIG;
 }
@@ -40,8 +43,8 @@ export async function getCustomerHome(user: SessionUser) {
                 id: true,
                 label: true,
                 _count: { select: { stops: true } },
-                trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true } },
-                location: { select: { recordedAt: true } },
+                trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true } },
+                location: { select: { latitude: true, longitude: true, accuracy: true, recordedAt: true } },
               },
             },
           },
@@ -89,4 +92,52 @@ export async function getTrackedBus(actor: Actor, busId: string) {
   if (!canViewBus(actor, scope, bus)) throw notFound();
   const settings = await getEventSettings();
   return { bus, settings };
+}
+
+type TripRow = { status: BusStatus; statusChangedAt: Date; sharingLocation: boolean };
+type LocationRow = { latitude: number; longitude: number; accuracy: number | null; recordedAt: Date };
+
+/** Builds the browser snapshot from rows already loaded for a page. */
+export function toSnapshot(busId: string, trip: TripRow | undefined, location: LocationRow | null | undefined): BusLiveSnapshot {
+  return {
+    busId,
+    trip: trip ? { status: trip.status, statusChangedAt: trip.statusChangedAt.toISOString(), sharingLocation: trip.sharingLocation } : null,
+    location: location ? { ...location, recordedAt: location.recordedAt.toISOString() } : null,
+  };
+}
+
+/** Current live state of a bus (active trip + latest position), as sent to browsers. */
+export async function getBusSnapshot(busId: string): Promise<BusLiveSnapshot> {
+  const bus = await prisma.bus.findUnique({
+    where: { id: busId },
+    select: {
+      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true } },
+      location: { select: { latitude: true, longitude: true, accuracy: true, recordedAt: true } },
+    },
+  });
+  return toSnapshot(busId, bus?.trips[0], bus?.location);
+}
+
+/** Throws not_found unless `actor` may view this bus (same rule as the tracking page). */
+export async function assertCanViewBus(actor: Actor, busId: string) {
+  const bus = await prisma.bus.findUnique({ where: { id: busId }, select: { hotelId: true, isActive: true } });
+  if (!bus || (!bus.isActive && !isStaff(actor))) throw notFound();
+  if (!canViewBus(actor, await loadScope(actor), bus)) throw notFound();
+}
+
+/** Snapshot for an authorized viewer (polling fallback). */
+export async function getLiveBus(actor: Actor, busId: string) {
+  await assertCanViewBus(actor, busId);
+  return getBusSnapshot(busId);
+}
+
+/** Pushes the bus's current state to subscribers. Never throws. */
+export async function publishBus(busId: string) {
+  const rt = realtime();
+  if (!rt.enabled) return;
+  try {
+    await rt.publishBus(await getBusSnapshot(busId));
+  } catch (err) {
+    console.error("[realtime] snapshot failed", (err as Error).name);
+  }
 }
