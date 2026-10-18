@@ -1,0 +1,67 @@
+import { getTranslations, setRequestLocale } from "next-intl/server";
+import { assignableRoles } from "@/server/policies";
+import { listPeople } from "@/server/services/people";
+import { hotelOptions } from "@/server/services/hotels";
+import { peopleFilter } from "@/lib/validation/entities";
+import { param, requireStaff } from "@/lib/utils/page";
+import { Badge, EmptyState, ListCard, PageHeader } from "@/components/ui/Layout";
+import { FilterSelect, Pagination, SearchForm } from "@/components/ui/Directory";
+
+const ROLES = ["OWNER", "ADMIN", "COORDINATOR", "CUSTOMER"] as const;
+
+export default async function PeoplePage({ params, searchParams }: PageProps<"/[locale]/people">) {
+  const { locale } = await params;
+  setRequestLocale(locale);
+  const user = await requireStaff(locale);
+  const sp = await searchParams;
+  const q = param(sp.q);
+  const cursor = param(sp.cursor);
+  const filter = peopleFilter.parse({ role: param(sp.role), status: param(sp.status), hotelId: param(sp.hotelId) });
+  const [t, td, tr, tc, page, hotels] = await Promise.all([
+    getTranslations("people"),
+    getTranslations("directory"),
+    getTranslations("roles"),
+    getTranslations("common"),
+    listPeople(user, { q, cursor, ...filter }),
+    hotelOptions(user),
+  ]);
+
+  return (
+    <section className="flex flex-col gap-5">
+      <PageHeader title={t("title")} action={assignableRoles(user).length ? { href: "/people/new", label: t("add") } : undefined} />
+      <SearchForm q={q} placeholder={t("searchPlaceholder")}>
+        <FilterSelect name="role" label={t("role")} value={filter.role} allLabel={td("all")} options={ROLES.map((r) => ({ value: r, label: tr(r) }))} />
+        <FilterSelect name="hotelId" label={t("hotel")} value={filter.hotelId} allLabel={td("all")} options={hotels.map((h) => ({ value: h.id, label: h.name }))} />
+        <FilterSelect
+          name="status"
+          label={tc("status")}
+          value={filter.status}
+          allLabel={td("all")}
+          options={[
+            { value: "ACTIVE", label: tc("active") },
+            { value: "INACTIVE", label: tc("inactive") },
+          ]}
+        />
+      </SearchForm>
+      {page.items.length === 0 ? (
+        <EmptyState>{td("noResults")}</EmptyState>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {page.items.map((p) => (
+            <ListCard key={p.id} href={`/people/${p.id}`} title={p.name}>
+              <span>📞 {p.phone}</span>
+              <span className="flex flex-wrap gap-2">
+                <Badge>{tr(p.role)}</Badge>
+                {p.status === "INACTIVE" && <Badge tone="danger">{tc("inactive")}</Badge>}
+                {p.role === "CUSTOMER" && !p.hotel && <Badge tone="warn">⚠ {t("noHotel")}</Badge>}
+              </span>
+              {p.hotel && <span>🏨 {p.hotel.name}</span>}
+              {p.coordinatedHotel && <span>🏨 {t("coordinatesHotel", { hotel: p.coordinatedHotel.name })}</span>}
+            </ListCard>
+          ))}
+        </ul>
+      )}
+      <Pagination nextCursor={page.nextCursor} params={{ q, cursor, ...filter }} />
+    </section>
+  );
+}

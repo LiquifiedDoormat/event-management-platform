@@ -8,6 +8,8 @@ export default getRequestConfig(async ({ requestLocale }) => {
 
   return {
     locale,
+    // Event is in India; format all dates/times in IST on server and client alike.
+    timeZone: "Asia/Kolkata",
     messages: (await import(`../../messages/${locale}.json`)).default,
   };
 });

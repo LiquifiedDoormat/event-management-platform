@@ -11,10 +11,10 @@ export async function EventOverview({ overview }: { overview: Overview }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <StatTile label={t("hotels")} value={overview.hotels} />
-        <StatTile label={t("buses")} value={overview.buses} />
-        <StatTile label={t("attendees")} value={overview.attendees} />
-        <StatTile label={t("coordinators")} value={overview.coordinators} />
+        <StatTile label={t("hotels")} value={overview.hotels} href="/hotels" />
+        <StatTile label={t("buses")} value={overview.buses} href="/buses" />
+        <StatTile label={t("attendees")} value={overview.attendees} href="/people?role=CUSTOMER" />
+        <StatTile label={t("coordinators")} value={overview.coordinators} href="/coordinators" />
       </div>
       <section className="rounded-lg border border-line p-4 flex flex-col gap-1">
         <h2 className="text-xl font-semibold">{t("needsAttention")}</h2>

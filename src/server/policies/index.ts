@@ -31,6 +31,7 @@ export type Action =
   | "bus.editStops"
   | "bus.deactivate"
   | "bus.reassignHotel"
+  | "bus.assignCoordinator"
   | "person.create"
   | "person.update"
   | "person.deactivate"
@@ -69,6 +70,14 @@ export function assignableRoles(actor: Actor): Role[] {
   if (actor.role === "OWNER") return ["ADMIN", "COORDINATOR", "CUSTOMER"];
   if (actor.role === "ADMIN") return ["CUSTOMER"];
   return [];
+}
+
+/**
+ * Attendee hotel allotment: the Owner may change it at any time; an Admin may
+ * only make the first allotment (when the attendee has no hotel yet).
+ */
+export function canSetAttendeeHotel(actor: Actor, currentHotelId: string | null): boolean {
+  return can(actor, "person.reassignHotel") || (actor.role === "ADMIN" && currentHotelId === null);
 }
 
 /** Admins may edit attendees and coordinators, never other staff. */

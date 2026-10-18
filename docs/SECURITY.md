@@ -36,7 +36,8 @@
 | Create accounts | any role except Owner | Customers only | — | — |
 | Edit people | all except other Owners | Customers & Coordinators | — | — |
 | Deactivate hotels, buses, people | ✅ | — | — | — |
-| Reassign attendee hotel, hotel coordinator, bus hotel | ✅ | — | — | — |
+| First hotel allotment for an attendee (no hotel yet) | ✅ | ✅ | — | — |
+| Change attendee hotel; hotel coordinator; bus hotel; bus coordinator | ✅ | — | — | — |
 | Change roles; event settings; audit log | ✅ | — | — | — |
 | Start/end trips | ✅ | ✅ | own designated buses | — |
 | Change bus status | ✅ (correction) | ✅ (correction) | own active trip | — |
@@ -44,7 +45,9 @@
 | View own hotel, its coordinator (name + phone), its buses | ✅ | ✅ | designated hotel + hotels of own buses | own hotel only |
 | View a person's details | everyone | everyone | self + attendees of hotels in scope | self only |
 
-Nothing is hard-deleted through the app; records are deactivated to preserve history.
+Nothing is hard-deleted through the app except bus stops (route configuration); everything else is deactivated to preserve history. Guard rails: a hotel with active buses/attendees can't be deactivated; a bus or coordinator on an active trip can't be deactivated or (coordinator) have their role changed; nobody can deactivate or change their own role; changing a person's phone number or deactivating them revokes all their sessions.
+
+Mutations from pages go through Server Actions (`src/features/admin/actions.ts`), which Next.js only accepts from the same origin; every action calls a service that re-checks the policy. Directory and detail pages for hotels, buses, coordinators and people are Owner/Admin only; a 404 is shown for missing or forbidden records.
 
 ## HTTP headers
 
