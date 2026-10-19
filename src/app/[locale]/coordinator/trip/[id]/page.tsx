@@ -11,7 +11,7 @@ export default async function TripPage({ params }: PageProps<"/[locale]/coordina
   setRequestLocale(locale);
   const user = await requireUser(locale, ["COORDINATOR"]);
   // Only the coordinator's own active trip; ended or other trips → 404.
-  const trip = (await activeTripsFor(user.id)).find((tr) => tr.id === id);
+  const trip = (await activeTripsFor(user)).find((tr) => tr.id === id);
   if (!trip) notFound();
   const t = await getTranslations("trip");
 

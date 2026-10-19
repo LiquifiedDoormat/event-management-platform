@@ -87,6 +87,11 @@ export async function createPersonAction(_: ActionState, form: FormData) {
   return run(form, async (u, d) => `/people/${(await people.createPerson(u, personCreateInput.parse(d))).id}`);
 }
 
+/** Removes the PIN; the person chooses a new one at their next sign-in. */
+export async function resetPinAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => people.resetPin(u, id.parse(d.id)));
+}
+
 export async function updatePersonAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => people.updatePerson(u, id.parse(d.id), personUpdateInput.parse(d)));
 }

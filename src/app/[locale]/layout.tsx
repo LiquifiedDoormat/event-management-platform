@@ -8,6 +8,7 @@ import { Link } from "@/i18n/navigation";
 import { Suspense } from "react";
 import { LanguageSwitcher, LanguageSwitcherWithQuery } from "@/components/layout/LanguageSwitcher";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { EventSwitcher } from "@/components/layout/EventSwitcher";
 import { StaffNav } from "@/components/layout/StaffNav";
 import { roleHome } from "@/server/services/auth";
 import { getCurrentUser } from "@/lib/auth/current-user";
@@ -53,6 +54,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
               {user && <ProfileLink />}
               {user && <SignOutButton />}
             </div>
+            {user && <EventSwitcher user={user} />}
           </header>
           {user && (user.role === "OWNER" || user.role === "ADMIN") && <StaffNav home={roleHome(user.role)} />}
           {/* Bottom padding keeps content clear of the fixed mobile nav bar. */}

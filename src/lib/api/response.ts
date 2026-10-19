@@ -7,11 +7,11 @@ import { AppError } from "@/server/errors";
 
 export type ApiErrorCode =
   | "bad_request"
-  | "invalid_phone"
-  | "invalid_code"
-  | "code_expired"
+  | "invalid_credentials"
+  | "no_event_access"
+  | "weak_pin"
+  | "pin_mismatch"
   | "rate_limited"
-  | "provider_unavailable"
   | "unauthenticated"
   | "forbidden"
   | "not_found"

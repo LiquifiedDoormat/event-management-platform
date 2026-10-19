@@ -7,6 +7,11 @@
 // Options:
 //   --allow-additional   create another Owner even if one already exists
 //   --promote-existing   promote an existing account with this phone to Owner
+//   --reset-pin          remove an existing Owner's PIN (forgotten PIN)
+//
+// The Owner then signs in with their phone number ("Staff or coordinator") and
+// is asked to choose a 6-digit PIN. Do this promptly: until the PIN is set,
+// anyone who knows the number could set it (see docs/SECURITY.md).
 import "dotenv/config";
 import { parseArgs } from "node:util";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -19,6 +24,7 @@ const { values } = parseArgs({
     name: { type: "string" },
     "allow-additional": { type: "boolean", default: false },
     "promote-existing": { type: "boolean", default: false },
+    "reset-pin": { type: "boolean", default: false },
   },
 });
 
@@ -30,12 +36,30 @@ function fail(message: string): never {
 const phone = normalizePhone(values.phone ?? "");
 const name = values.name?.trim();
 if (!phone) fail("--phone must be a valid mobile number");
-if (!name) fail("--name is required");
+if (!name && !values["reset-pin"]) fail("--name is required");
 if (!process.env.DATABASE_URL) fail("DATABASE_URL is not set");
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
+const noPin = { pinHash: null, failedPinAttempts: 0, pinLockedUntil: null };
+
+function done(who: string) {
+  console.log(`${who} (${maskPhone(phone!)}). Now sign in → "Staff or coordinator" → enter this phone number → choose a 6-digit PIN. Do it right away.`);
+}
+
+async function resetOwnerPin() {
+  await prisma.$transaction(async (tx) => {
+    const owner = await tx.user.findFirst({ where: { phone: phone!, role: "OWNER" }, select: { id: true } });
+    if (!owner) fail(`no Owner account with ${maskPhone(phone!)}`);
+    await tx.user.update({ where: { id: owner!.id }, data: noPin });
+    await tx.session.updateMany({ where: { userId: owner!.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.auditLog.create({ data: { actorId: null, action: "owner.resetPin", entityType: "User", entityId: owner!.id, metadata: { via: "scripts/create-owner.ts" } } });
+  });
+  done("Owner PIN reset");
+}
+
 async function main() {
+  if (values["reset-pin"]) return resetOwnerPin();
   await prisma.$transaction(async (tx) => {
     const owners = await tx.user.count({ where: { role: "OWNER", status: "ACTIVE" } });
     if (owners > 0 && !values["allow-additional"]) {
@@ -48,12 +72,12 @@ async function main() {
       if (!values["promote-existing"]) {
         fail(`an account with ${maskPhone(phone!)} already exists (role ${existing.role}). Use --promote-existing.`);
       }
-      await tx.user.update({ where: { id: existing.id }, data: { role: "OWNER", status: "ACTIVE", name: name! } });
+      await tx.user.update({ where: { id: existing.id }, data: { role: "OWNER", status: "ACTIVE", name: name!, ...noPin } });
       // Force a fresh sign-in so the new role is picked up cleanly.
       await tx.session.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } });
       userId = existing.id;
     } else {
-      userId = (await tx.user.create({ data: { phone: phone!, name: name!, role: "OWNER" }, select: { id: true } })).id;
+      userId = (await tx.user.create({ data: { phone: phone!, name: name!, role: "OWNER", ...noPin }, select: { id: true } })).id;
     }
 
     await tx.auditLog.create({
@@ -65,7 +89,7 @@ async function main() {
         metadata: { via: "scripts/create-owner.ts" },
       },
     });
-    console.log(`Owner ready: ${name} (${maskPhone(phone!)}). Sign in with this number using the OTP flow.`);
+    done(`Owner ready: ${name}`);
   });
 }
 

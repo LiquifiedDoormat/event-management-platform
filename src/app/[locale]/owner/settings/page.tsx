@@ -23,7 +23,6 @@ export default async function SettingsPage({ params }: PageProps<"/[locale]/owne
       <h1 className="text-3xl font-bold">{t("title")}</h1>
       {settings.updatedAt && <p className="text-muted">{tc("updated")}: {format.dateTime(settings.updatedAt, { dateStyle: "medium", timeStyle: "short" })}</p>}
       <ActionForm action={updateSettingsAction} submitLabel={tc("save")}>
-        <TextField name="eventName" label={t("eventName")} hint={t("eventNameHint")} defaultValue={settings.eventName} required maxLength={120} />
         <TextField name="staleLocationSeconds" label={t("stale")} hint={t("staleHint")} defaultValue={settings.staleLocationSeconds} inputMode="numeric" />
         <TextField name="historySampleSeconds" label={t("sample")} hint={t("sampleHint")} defaultValue={settings.historySampleSeconds} inputMode="numeric" />
         <TextField name="locationRetentionDays" label={t("retention")} hint={t("retentionHint")} defaultValue={settings.locationRetentionDays} inputMode="numeric" />

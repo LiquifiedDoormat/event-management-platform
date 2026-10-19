@@ -6,9 +6,9 @@ Target setup (all managed, India region where possible):
 | --- | --- | --- |
 | App (Next.js) | Vercel (project already connected to the GitHub repo) | `bom1` Mumbai (set in `vercel.json`) |
 | Database | Neon Postgres (or Supabase) | AWS `ap-south-1` Mumbai |
-| Phone OTP | Twilio Verify | — |
-| Live updates | Pusher Channels | `ap2` Mumbai |
-| Maps | Google Maps Platform | — |
+| Sign-in | Built in (PIN for staff / phone number for attendees) — no provider | — |
+| Live updates | Built in (polling) — no provider | — |
+| Maps | "Open in Google Maps" links (free); embedded map optional (Google billing account) | — |
 
 Never paste secrets into chat, issues, commits or screenshots. Enter them only in the provider dashboards and in Vercel → **Settings → Environment Variables**.
 
@@ -31,10 +31,7 @@ Vercel → Project → Settings → Environment Variables. Set per environment:
 | `DATABASE_URL` | Neon main, pooled | Neon `preview` branch, pooled | |
 | `DIRECT_DATABASE_URL` | Neon main, direct | (optional) | Migrations only |
 | `APP_URL` | `https://<your-domain>` | `https://<project>.vercel.app` | Same-origin checks also accept the request's own host |
-| `OTP_PROVIDER` | `twilio` | `twilio` | `dev` is refused in production builds |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | ✓ | ✓ | README › Phone OTP provider |
-| `PUSHER_APP_ID`, `PUSHER_SECRET`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER` | ✓ | optional | Optional: without them pages poll every 15 s |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | ✓ | optional | Add the Vercel domains to the key's website restrictions |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | optional | optional | Only for the embedded map (needs Google billing). Leave unset for zero provider cost. |
 | `CRON_SECRET` | ✓ | — | `openssl rand -hex 32`; Vercel Cron sends it to `/api/cron/prune` |
 | `MIGRATE_ON_BUILD` | — | `1` only if Preview uses its own DB | Production always migrates |
 
@@ -53,7 +50,7 @@ Merging to `main` deploys production. Pull requests get preview URLs.
 
 1. Set all Production variables (section 2).
 2. Merge to `main` (or Vercel → Deployments → Redeploy). Check the build log shows `applying migrations (production)`.
-3. Create the first Owner from your computer against the production database, without saving the URL in shell history:
+3. Create the first Owner from your computer (then immediately sign in → "Staff or coordinator" → your number → Continue, and choose a PIN) against the production database, without saving the URL in shell history:
    ```bash
    npx vercel env pull .env.production.local --environment=production
    ```
@@ -66,8 +63,8 @@ Merging to `main` deploys production. Pull requests get preview URLs.
 ## 5. Smoke test (after every production deploy)
 
 1. `https://<domain>/api/health` → `{"ok":true,"database":"up"}`.
-2. Sign in as the Owner with a real SMS code; open Hotels, Buses, People; switch to Hindi.
-3. Create a test hotel, bus and attendee (your own second phone); sign in as the attendee in a private window.
+2. Sign in as the Owner (choose the PIN). Create an event (Events), then open Hotels, Buses, People; switch to Hindi.
+3. Create a test hotel, bus, coordinator (they choose a PIN at first sign-in) and attendee (your own second phone); sign in as each in a private window.
 4. Coordinator test on a **real phone** (Android Chrome and iPhone Safari): sign in, start trip, change status, start sharing location, walk/drive a few hundred metres with the screen on; watch the attendee page update. Lock the phone for 2 minutes and confirm the attendee page shows "may be out of date". End the trip.
 5. Owner → Audit log shows the changes. Deactivate the test records.
 
@@ -79,3 +76,17 @@ Merging to `main` deploys production. Pull requests get preview URLs.
 ## 7. Custom domain
 
 Vercel → Settings → Domains. Then update `APP_URL`, the Google Maps key's website restrictions, and redeploy. Geolocation only works on HTTPS (Vercel provides it).
+
+## Cost review (Phase 8)
+
+No SMS, OTP, realtime or map **provider** fees: sign-in, live updates and maps-as-links are built into the app. What can still cost money:
+
+| Item | Free option | Limits / risks to check before relying on it |
+| --- | --- | --- |
+| Hosting (Vercel) | Hobby plan | Terms restrict Hobby to personal, **non-commercial** use; a business running events may need Pro (paid). Monthly limits on function invocations, CPU time and bandwidth; exceeding them pauses or bills. |
+| Database (Neon) | Free tier | Limited compute hours/month, storage and connections; compute scales with request volume. |
+| Scheduled cleanup (Vercel Cron) | Included | Hobby allows a small number of daily cron jobs. |
+| Custom domain | — | Registrar fee if you want your own domain (optional). |
+| Google Maps embed | — | Needs a billing account; free monthly credit then pay-as-you-go. Off by default. |
+
+**Load estimate (worst case, event day):** 2,000 attendees with the page open poll every 20 s → ~100 requests/s (~6,000/min, ~360,000/hour), each a small database read; plus ~20 buses × 1 GPS write/6 s. Pages only poll while visible and slow to 60 s when no trip is running, so real traffic is usually far lower — but at the upper end this likely **exceeds free-tier limits** on Vercel and Neon. Options if needed: longer poll interval for attendees (e.g. 30–60 s), a paid plan for event days, or a self-hosted server/database. Measure with the k6 script (OPERATIONS.md) on staging before the event. Free-tier limits and terms change; check the providers' current pricing pages.

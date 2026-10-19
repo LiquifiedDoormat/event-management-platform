@@ -48,7 +48,11 @@ function FreshnessNote({ freshness, recordedAt, now }: { freshness: Freshness; r
 
 function ModeNote({ mode }: { mode: LiveMode }) {
   const t = useTranslations("transport");
-  return <p className="text-muted text-base">{mode === "live" ? `🟢 ${t("liveOn")}` : `🔄 ${t("polling")}`}</p>;
+  return mode === "offline" ? (
+    <p role="status" className="font-semibold text-warn">⚠ {t("offline")}</p>
+  ) : (
+    <p className="text-muted text-base">🔄 {t("polling")}</p>
+  );
 }
 
 /** Compact live status for the attendee homepage (no map). */

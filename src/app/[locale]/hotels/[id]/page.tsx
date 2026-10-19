@@ -42,7 +42,7 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
                 t("noLocation")
               ),
             ],
-            [t("attendees"), <Link key="a" href={`/people?role=CUSTOMER&hotelId=${hotel.id}`} className="text-brand font-semibold underline">{hotel._count.attendees}</Link>],
+            [t("attendees"), <Link key="a" href={`/people?role=CUSTOMER&hotelId=${hotel.id}`} className="text-brand font-semibold underline">{hotel._count.members}</Link>],
             [t("notes"), hotel.notes || "—"],
             [tc("updated"), format.dateTime(hotel.updatedAt, { dateStyle: "medium", timeStyle: "short" })],
           ]}

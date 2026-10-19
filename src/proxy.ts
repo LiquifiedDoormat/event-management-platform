@@ -22,7 +22,7 @@ function contentSecurityPolicy(nonce: string) {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.googleusercontent.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://*.pusher.com wss://*.pusher.com",
+    "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",

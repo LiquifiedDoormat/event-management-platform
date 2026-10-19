@@ -28,7 +28,6 @@ jobs:
       # Integration tests truncate tables; in CI they share the throwaway database.
       TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/event_ci
       APP_URL: http://localhost:3000
-      OTP_PROVIDER: dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

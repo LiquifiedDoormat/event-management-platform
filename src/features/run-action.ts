@@ -9,6 +9,7 @@ import { fieldErrors, formToObject } from "@/lib/validation/common";
 import { AppError } from "@/server/errors";
 import type { ActionState } from "@/features/admin/action-state";
 
+/** Return a path to redirect to, or nothing. */
 export type Handler = (user: SessionUser, data: Record<string, string>) => Promise<string | void>;
 
 /**
@@ -18,7 +19,7 @@ export type Handler = (user: SessionUser, data: Record<string, string>) => Promi
 export async function run(form: FormData, handler: Handler): Promise<ActionState> {
   const user = await getCurrentUser();
   if (!user) return { status: "error", message: "errors.unauthenticated" };
-  let target: string | void;
+  let target: Awaited<ReturnType<Handler>>;
   try {
     target = await handler(user, formToObject(form));
   } catch (err) {

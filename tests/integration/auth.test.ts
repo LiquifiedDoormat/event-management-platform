@@ -1,132 +1,179 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
-import { devExpireCode, devLastCodeFor } from "@/lib/auth/otp/dev";
+import { hashPin } from "@/lib/auth/pin";
 import { revokeAllSessions, validateSession } from "@/lib/auth/session";
-import { logout, requestOtp, verifyOtp } from "@/server/services/auth";
-import { createUser, hasTestDb, resetDb } from "./helpers";
+import { clearPin, loginAttendee, loginWithPin, logout, pinStatus, setupPin } from "@/server/services/auth";
+import { createEvent, createTwoHotels, createUser, defaultEvent, hasTestDb, resetDb } from "./helpers";
 
 const ip = "203.0.113.7";
+const PIN = "482915";
+let pinHash: string;
 
-async function signIn(phone: string) {
-  expect(await requestOtp({ phone, ip })).toEqual({ status: "sent" });
-  const code = devLastCodeFor(phone);
-  expect(code).toMatch(/^\d{6}$/);
-  const result = await verifyOtp({ phone, code: code!, ip });
-  if (result.status !== "ok") throw new Error(`login failed: ${result.status}`);
-  return result;
+async function resetPinOf(userId: string) {
+  await prisma.$transaction((tx) => clearPin(tx, userId));
 }
 
-describe.skipIf(!hasTestDb)("phone OTP authentication", () => {
-  beforeEach(resetDb);
+describe.skipIf(!hasTestDb)("PIN sign-in for Owner, Admin and Coordinator", () => {
+  beforeEach(async () => {
+    await resetDb();
+    pinHash ??= await hashPin(PIN);
+  });
 
-  it("signs in a registered user and the session persists", async () => {
-    const user = await createUser("CUSTOMER");
-    const { token, user: signedIn } = await signIn(user.phone);
-    expect(signedIn.id).toBe(user.id);
-
-    // A later request (e.g. after a browser restart) with the same cookie still works.
-    const again = await validateSession(token);
-    expect(again?.user.id).toBe(user.id);
-
-    // Only the hash is stored.
-    const stored = await prisma.session.findFirstOrThrow({ where: { userId: user.id } });
-    expect(stored.tokenHash).not.toBe(token);
+  it("signs in with phone + PIN into the chosen event; the session persists and carries the event", async () => {
+    const eventId = await defaultEvent();
+    const coord = await createUser("COORDINATOR", { pinHash });
+    const result = await loginWithPin({ phone: coord.phone, pin: PIN, eventId, ip });
+    expect(result.status).toBe("ok");
+    const session = await validateSession(result.status === "ok" ? result.token : "");
+    expect(session?.user).toMatchObject({ id: coord.id, eventId, role: "COORDINATOR" });
+    // Same token later (browser restart) still works; only the hash is stored.
+    expect((await validateSession(result.status === "ok" ? result.token : ""))?.user.id).toBe(coord.id);
+    const stored = await prisma.session.findFirstOrThrow({ where: { userId: coord.id } });
     expect(stored.tokenHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("accepts the national format without +91", async () => {
-    const user = await createUser("CUSTOMER");
-    const local = user.phone.replace("+91", "");
-    expect(await requestOtp({ phone: local, ip })).toEqual({ status: "sent" });
-    const res = await verifyOtp({ phone: local, code: devLastCodeFor(user.phone)!, ip });
-    expect(res.status).toBe("ok");
+  it("returns the same generic result for a wrong PIN, unknown number, attendee number or no PIN yet", async () => {
+    const eventId = await defaultEvent();
+    const admin = await createUser("ADMIN", { pinHash });
+    const noPin = await createUser("COORDINATOR");
+    const guest = await createUser("CUSTOMER");
+    for (const attempt of [
+      { phone: admin.phone, pin: "111222" },
+      { phone: "+919812300000", pin: PIN },
+      { phone: guest.phone, pin: PIN },
+      { phone: noPin.phone, pin: PIN },
+      { phone: admin.phone, pin: "12ab" },
+    ]) {
+      expect(await loginWithPin({ ...attempt, eventId, ip })).toEqual({ status: "invalid" });
+    }
   });
 
-  it("gives unknown numbers the same response but sends nothing", async () => {
-    const phone = "+919812300000";
-    expect(await requestOtp({ phone, ip })).toEqual({ status: "sent" });
-    expect(devLastCodeFor(phone)).toBeUndefined();
-    expect((await verifyOtp({ phone, code: "123456", ip })).status).toBe("invalid");
+  it("locks the account for 15 minutes after 5 wrong PINs, even with the right PIN", async () => {
+    const eventId = await defaultEvent();
+    const admin = await createUser("ADMIN", { pinHash });
+    for (let i = 0; i < 5; i++) await loginWithPin({ phone: admin.phone, pin: "000123", eventId, ip: `10.0.0.${i}` });
+    const locked = await loginWithPin({ phone: admin.phone, pin: PIN, eventId, ip: "10.0.1.1" });
+    expect(locked.status).toBe("rate_limited");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })).pinLockedUntil).not.toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "auth.pinLocked", entityId: admin.id } })).toBe(1);
   });
 
-  it("rejects malformed phone numbers", async () => {
-    expect(await requestOtp({ phone: "12345", ip })).toEqual({ status: "invalid_phone" });
-  });
-
-  it("rejects a wrong code, then accepts the right one", async () => {
-    const user = await createUser("ADMIN");
-    await requestOtp({ phone: user.phone, ip });
-    const code = devLastCodeFor(user.phone)!;
-    const wrong = code === "000000" ? "111111" : "000000";
-    expect((await verifyOtp({ phone: user.phone, code: wrong, ip })).status).toBe("invalid");
-    expect((await verifyOtp({ phone: user.phone, code, ip })).status).toBe("ok");
-  });
-
-  it("reports an expired code", async () => {
-    const user = await createUser("CUSTOMER");
-    await requestOtp({ phone: user.phone, ip });
-    const code = devLastCodeFor(user.phone)!;
-    devExpireCode(user.phone);
-    expect((await verifyOtp({ phone: user.phone, code, ip })).status).toBe("expired");
-  });
-
-  it("does not let inactive accounts sign in", async () => {
-    const user = await createUser("CUSTOMER", { status: "INACTIVE" });
-    expect(await requestOtp({ phone: user.phone, ip })).toEqual({ status: "sent" });
-    expect(devLastCodeFor(user.phone)).toBeUndefined();
-  });
-
-  it("ends existing sessions when an account is deactivated", async () => {
-    const user = await createUser("CUSTOMER");
-    const { token } = await signIn(user.phone);
-    await prisma.user.update({ where: { id: user.id }, data: { status: "INACTIVE" } });
-    expect(await validateSession(token)).toBeNull();
-  });
-
-  it("signs out", async () => {
-    const user = await createUser("CUSTOMER");
-    const { token } = await signIn(user.phone);
-    await logout(token);
-    expect(await validateSession(token)).toBeNull();
-  });
-
-  it("can revoke all of a user's sessions", async () => {
-    const user = await createUser("CUSTOMER");
-    const a = await signIn(user.phone);
-    const b = await signIn(user.phone);
-    await revokeAllSessions(user.id);
-    expect(await validateSession(a.token)).toBeNull();
-    expect(await validateSession(b.token)).toBeNull();
-  });
-
-  it("rejects expired sessions and garbage tokens", async () => {
-    const user = await createUser("CUSTOMER");
-    const { token } = await signIn(user.phone);
-    await prisma.session.updateMany({ where: { userId: user.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
-    expect(await validateSession(token)).toBeNull();
-    expect(await validateSession("not-a-real-token")).toBeNull();
-    expect(await validateSession(undefined)).toBeNull();
-  });
-
-  it("applies role changes on the next request", async () => {
-    const user = await createUser("CUSTOMER");
-    const { token } = await signIn(user.phone);
-    await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
-    expect((await validateSession(token))?.user.role).toBe("ADMIN");
-  });
-
-  it("rate-limits OTP requests per phone number", async () => {
-    const user = await createUser("CUSTOMER");
-    for (let i = 0; i < 5; i++) expect((await requestOtp({ phone: user.phone, ip })).status).toBe("sent");
-    const blocked = await requestOtp({ phone: user.phone, ip });
-    expect(blocked.status).toBe("rate_limited");
-  });
-
-  it("rate-limits verification attempts per phone number", async () => {
-    const user = await createUser("CUSTOMER");
-    await requestOtp({ phone: user.phone, ip });
+  it("rate-limits PIN attempts per phone number", async () => {
+    const eventId = await defaultEvent();
+    const admin = await createUser("ADMIN", { pinHash });
     let last;
-    for (let i = 0; i < 9; i++) last = await verifyOtp({ phone: user.phone, code: "000001", ip });
+    for (let i = 0; i < 11; i++) last = await loginWithPin({ phone: admin.phone, pin: "000123", eventId, ip: `10.1.0.${i}` });
+    expect(last?.status).toBe("rate_limited");
+  });
+
+  it("phone check: accounts without a PIN are asked to choose one; unknown numbers look like PIN accounts", async () => {
+    const withPin = await createUser("ADMIN", { pinHash });
+    const without = await createUser("COORDINATOR");
+    const guest = await createUser("CUSTOMER");
+    expect(await pinStatus({ phone: withPin.phone, ip })).toEqual({ status: "enter_pin" });
+    expect(await pinStatus({ phone: without.phone, ip })).toEqual({ status: "needs_pin" });
+    // Attendees and unknown numbers get the same answer as PIN accounts (no account discovery).
+    expect(await pinStatus({ phone: guest.phone, ip })).toEqual({ status: "enter_pin" });
+    expect(await pinStatus({ phone: "+919800000001", ip })).toEqual({ status: "enter_pin" });
+    expect(await pinStatus({ phone: "abc", ip })).toEqual({ status: "invalid" });
+  });
+
+  it("first sign-in: a person without a PIN chooses one once; it can't be overwritten that way", async () => {
+    const eventId = await defaultEvent();
+    const coord = await createUser("COORDINATOR");
+    expect((await setupPin({ phone: coord.phone, pin: "123456", pinConfirm: "123456", eventId, ip })).status).toBe("weak_pin");
+    expect((await setupPin({ phone: coord.phone, pin: PIN, pinConfirm: "482916", eventId, ip })).status).toBe("pin_mismatch");
+    expect((await setupPin({ phone: coord.phone, pin: PIN, pinConfirm: PIN, eventId, ip })).status).toBe("ok");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: coord.id } })).pinHash).toMatch(/^scrypt\$/);
+    expect((await setupPin({ phone: coord.phone, pin: "593817", pinConfirm: "593817", eventId, ip })).status).toBe("invalid");
+    expect((await loginWithPin({ phone: coord.phone, pin: PIN, eventId, ip })).status).toBe("ok");
+    expect(await prisma.auditLog.count({ where: { action: "auth.pinSet", entityId: coord.id } })).toBe(1);
+  });
+
+  it("first PIN still requires event access, and attendees can't set one", async () => {
+    const other = (await createEvent("Other event")).id;
+    const coord = await createUser("COORDINATOR");
+    const guest = await createUser("CUSTOMER");
+    expect((await setupPin({ phone: coord.phone, pin: PIN, pinConfirm: PIN, eventId: other, ip })).status).toBe("no_event_access");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: coord.id } })).pinHash).toBeNull();
+    expect((await setupPin({ phone: guest.phone, pin: PIN, pinConfirm: PIN, eventId: await defaultEvent(), ip })).status).toBe("invalid");
+  });
+
+  it("a PIN reset disables the old PIN, signs the person out and lets them choose a new one", async () => {
+    const eventId = await defaultEvent();
+    const coord = await createUser("COORDINATOR", { pinHash });
+    const login = await loginWithPin({ phone: coord.phone, pin: PIN, eventId, ip });
+    await resetPinOf(coord.id);
+    expect(await validateSession(login.status === "ok" ? login.token : "")).toBeNull();
+    expect((await loginWithPin({ phone: coord.phone, pin: PIN, eventId, ip })).status).toBe("invalid");
+    expect(await pinStatus({ phone: coord.phone, ip })).toEqual({ status: "needs_pin" });
+    expect((await setupPin({ phone: coord.phone, pin: "593817", pinConfirm: "593817", eventId, ip })).status).toBe("ok");
+  });
+
+  it("coordinators can only sign in to events they are registered for; staff to any event", async () => {
+    const other = (await createEvent("Other event")).id;
+    const eventId = await defaultEvent();
+    const coord = await createUser("COORDINATOR", { pinHash });
+    const admin = await createUser("ADMIN", { pinHash });
+    expect((await loginWithPin({ phone: coord.phone, pin: PIN, eventId: other, ip })).status).toBe("no_event_access");
+    expect((await loginWithPin({ phone: coord.phone, pin: PIN, eventId: null, ip })).status).toBe("no_event_access");
+    expect((await loginWithPin({ phone: admin.phone, pin: PIN, eventId: other, ip })).status).toBe("ok");
+    expect((await loginWithPin({ phone: coord.phone, pin: PIN, eventId, ip })).status).toBe("ok");
+  });
+
+  it("deactivation, sign-out and revoke-all end sessions", async () => {
+    const eventId = await defaultEvent();
+    const admin = await createUser("ADMIN", { pinHash });
+    const a = await loginWithPin({ phone: admin.phone, pin: PIN, eventId, ip });
+    const b = await loginWithPin({ phone: admin.phone, pin: PIN, eventId, ip });
+    const tokenA = a.status === "ok" ? a.token : "";
+    const tokenB = b.status === "ok" ? b.token : "";
+    await logout(tokenA);
+    expect(await validateSession(tokenA)).toBeNull();
+    expect(await validateSession(tokenB)).not.toBeNull();
+    await prisma.user.update({ where: { id: admin.id }, data: { status: "INACTIVE" } });
+    expect(await validateSession(tokenB)).toBeNull();
+    await prisma.user.update({ where: { id: admin.id }, data: { status: "ACTIVE" } });
+    await revokeAllSessions(admin.id);
+    expect(await validateSession(tokenB)).toBeNull();
+  });
+});
+
+describe.skipIf(!hasTestDb)("attendee sign-in (phone + event; no PIN, no SMS)", () => {
+  beforeEach(resetDb);
+
+  it("signs a registered attendee into their event with read-only role and their hotel", async () => {
+    const { eventId, guestA, hotelA } = await createTwoHotels();
+    const r = await loginAttendee({ phone: guestA.phone, eventId, ip });
+    expect(r.status).toBe("ok");
+    const session = await validateSession(r.status === "ok" ? r.token : "");
+    expect(session?.user).toMatchObject({ id: guestA.id, role: "CUSTOMER", eventId, hotelId: hotelA.id });
+  });
+
+  it("refuses attendees of other events, staff numbers and unknown numbers with the same result", async () => {
+    const { guestA } = await createTwoHotels();
+    const other = (await createEvent("Other")).id;
+    const coord = await createUser("COORDINATOR");
+    expect(await loginAttendee({ phone: guestA.phone, eventId: other, ip })).toEqual({ status: "invalid" });
+    expect(await loginAttendee({ phone: coord.phone, eventId: await defaultEvent(), ip })).toEqual({ status: "invalid" });
+    expect(await loginAttendee({ phone: "+919812300001", eventId: await defaultEvent(), ip })).toEqual({ status: "invalid" });
+  });
+
+
+  it("refuses inactive events and ends sessions when the attendee is removed from the event", async () => {
+    const { eventId, guestA } = await createTwoHotels();
+    const r = await loginAttendee({ phone: guestA.phone, eventId, ip });
+    const token = r.status === "ok" ? r.token : "";
+    await prisma.eventMember.deleteMany({ where: { userId: guestA.id } });
+    expect(await validateSession(token)).toBeNull();
+    await prisma.event.update({ where: { id: eventId }, data: { isActive: false } });
+    expect((await loginAttendee({ phone: guestA.phone, eventId, ip })).status).toBe("invalid");
+  });
+
+  it("rate-limits attendee sign-in attempts per phone number", async () => {
+    const eventId = await defaultEvent();
+    let last;
+    for (let i = 0; i < 11; i++) last = await loginAttendee({ phone: "+919812300002", eventId, ip: `10.2.0.${i}` });
     expect(last?.status).toBe("rate_limited");
   });
 });

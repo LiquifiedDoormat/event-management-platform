@@ -6,15 +6,17 @@ import { can, canChangeStatus, canSendLocation, canStartTrip, type Actor } from 
 import { loadScope } from "@/server/policies/scope";
 import { AppError, conflict, forbidden, isUniqueViolation, notFound } from "@/server/errors";
 import { audit } from "./audit";
-import { getEventSettings, publishBus } from "./transport";
+import { getEventSettings } from "./transport";
+import { eventOf } from "./context";
 
 // Trip lifecycle and live data. A trip is one run of a bus with a coordinator
 // on board; at most one active trip per bus (DB partial unique index) and per
-// coordinator (checked here). Every change is pushed to realtime subscribers.
+// coordinator (checked here). Viewers pick up changes by polling /api/buses/[id]/live.
 
-async function findTrip(tripId: string) {
-  const trip = await prisma.trip.findUnique({
-    where: { id: tripId },
+/** A trip of the actor's current event (trips of other events are "not found"). */
+async function findTrip(actor: Actor, tripId: string) {
+  const trip = await prisma.trip.findFirst({
+    where: { id: tripId, bus: { hotel: { eventId: eventOf(actor) } } },
     select: { id: true, busId: true, coordinatorId: true, endedAt: true, status: true, statusVersion: true, sharingLocation: true },
   });
   if (!trip) throw notFound();
@@ -30,15 +32,17 @@ export async function startTrip(actor: Actor, busId: string) {
   let tripId: string;
   try {
     tripId = await prisma.$transaction(async (tx) => {
-      const bus = await tx.bus.findUnique({ where: { id: busId }, select: { isActive: true, coordinatorId: true } });
+      const bus = await tx.bus.findFirst({ where: { id: busId, hotel: { eventId: eventOf(actor) } }, select: { isActive: true, coordinatorId: true } });
       if (!bus) throw notFound();
       if (!bus.isActive) throw new AppError("invalid", "busInactive");
       // Checked explicitly for a clear message; the partial unique index still guards races.
       if (await tx.trip.count({ where: { busId, endedAt: null } })) throw conflict("busOnTrip");
       const coordinatorId = actor.role === "COORDINATOR" ? actor.id : bus.coordinatorId;
       if (!coordinatorId) throw new AppError("invalid", "busHasNoCoordinator");
-      const coordinator = await tx.user.findUnique({ where: { id: coordinatorId }, select: { role: true, status: true } });
-      if (coordinator?.role !== "COORDINATOR" || coordinator.status !== "ACTIVE") throw new AppError("invalid", "notActiveCoordinator");
+      const coordinatorOk = await tx.user.count({
+        where: { id: coordinatorId, role: "COORDINATOR", status: "ACTIVE", memberships: { some: { eventId: eventOf(actor) } } },
+      });
+      if (!coordinatorOk) throw new AppError("invalid", "notActiveCoordinator");
       if (await tx.trip.count({ where: { coordinatorId, endedAt: null } })) throw conflict("coordinatorOnTrip");
 
       // A position left over from an earlier trip must never show as this trip's.
@@ -52,13 +56,12 @@ export async function startTrip(actor: Actor, busId: string) {
     if (isUniqueViolation(err)) throw conflict("busOnTrip");
     throw err;
   }
-  await publishBus(busId);
   return { id: tripId };
 }
 
 /** Ends a trip: stops tracking and removes the live position (history points remain). */
 export async function endTrip(actor: Actor, tripId: string) {
-  const trip = await findTrip(tripId);
+  const trip = await findTrip(actor, tripId);
   const allowed = can(actor, "trip.manage") || (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id);
   if (!allowed) throw forbidden();
   if (trip.endedAt) return;
@@ -67,7 +70,6 @@ export async function endTrip(actor: Actor, tripId: string) {
     await tx.busLocation.deleteMany({ where: { tripId } });
     await audit(tx, actor, "trip.end", "Trip", tripId, { busId: trip.busId });
   });
-  await publishBus(trip.busId);
 }
 
 /**
@@ -76,7 +78,7 @@ export async function endTrip(actor: Actor, tripId: string) {
  * instead of silently overwriting newer information.
  */
 export async function changeStatus(actor: Actor, tripId: string, status: BusStatus, expectedVersion: number) {
-  const trip = await findTrip(tripId);
+  const trip = await findTrip(actor, tripId);
   if (trip.endedAt) throw conflict("tripEnded");
   if (!canChangeStatus(actor, trip)) throw forbidden();
   if (trip.statusVersion !== expectedVersion) throw conflict("staleStatus");
@@ -94,18 +96,16 @@ export async function changeStatus(actor: Actor, tripId: string, status: BusStat
     }
     return expectedVersion + 1;
   });
-  await publishBus(trip.busId);
   return { version };
 }
 
 /** Coordinator turns location sharing on or off for their own active trip. */
 export async function setSharing(actor: Actor, tripId: string, sharing: boolean) {
-  const trip = await findTrip(tripId);
+  const trip = await findTrip(actor, tripId);
   if (trip.endedAt) throw conflict("tripEnded");
   if (!canSendLocation(actor, trip)) throw forbidden();
   if (trip.sharingLocation === sharing) return;
   await prisma.trip.update({ where: { id: tripId }, data: { sharingLocation: sharing } });
-  await publishBus(trip.busId);
 }
 
 export type LocationInput = {
@@ -130,7 +130,7 @@ const LOCATION_LIMIT = { limit: 30, windowSeconds: 60 };
  * duplicate requests can never move the bus backwards in time.
  */
 export async function recordLocation(actor: Actor, input: LocationInput): Promise<LocationResult> {
-  const trip = await findTrip(input.tripId);
+  const trip = await findTrip(actor, input.tripId);
   if (trip.endedAt) throw conflict("tripEnded");
   if (!canSendLocation(actor, trip)) throw forbidden();
 
@@ -169,15 +169,13 @@ export async function recordLocation(actor: Actor, input: LocationInput): Promis
   }
   if (!trip.sharingLocation) writes.push(prisma.trip.update({ where: { id: trip.id }, data: { sharingLocation: true } }));
   await Promise.all(writes);
-
-  await publishBus(trip.busId);
   return { accepted: true };
 }
 
-/** Active trips a coordinator can control (normally zero or one). */
-export function activeTripsFor(coordinatorId: string) {
+/** A coordinator's active trips in their current event (normally zero or one). */
+export function activeTripsFor(actor: Actor) {
   return prisma.trip.findMany({
-    where: { coordinatorId, endedAt: null },
+    where: { coordinatorId: actor.id, endedAt: null, bus: { hotel: { eventId: eventOf(actor) } } },
     select: { id: true, busId: true, status: true, statusVersion: true, statusChangedAt: true, sharingLocation: true, bus: { select: { label: true, hotel: { select: { name: true } } } } },
   });
 }

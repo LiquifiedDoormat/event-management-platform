@@ -6,18 +6,20 @@ PostgreSQL 17 (local: Docker; production: a managed service such as Neon or Supa
 
 | Model | Purpose | Key constraints |
 | --- | --- | --- |
-| `User` | Every account (Owner, Admin, Coordinator, Customer). `hotelId` = attendee's allotted hotel. | `phone` unique, E.164 CHECK; index `(role,status)`, `hotelId`, `name` |
-| `Hotel` | Hotel, address, coordinates, notes, active flag. | `coordinatorId` unique (one designated coordinator per hotel, one hotel per coordinator); coords CHECK |
+| `User` | Every account (Owner, Admin, Coordinator, Customer), one per phone. PIN fields: `pinHash` (scrypt; null = chooses a PIN at next sign-in), `failedPinAttempts`, `pinLockedUntil`. | `phone` unique, E.164 CHECK; index `(role,status)`, `name` |
+| `Event` | An independent event: name, dates, active flag. | dates CHECK; index `(isActive,name)` |
+| `EventMember` | Attendee/coordinator registration for an event; `hotelId` = attendee's hotel in that event. | unique `(eventId,userId)`; index `userId`, `hotelId` |
+| `Hotel` | Belongs to one event (`eventId`); address, coordinates, notes, active flag. | unique `(eventId, coordinatorId)` (a coordinator designates at most one hotel per event); coords CHECK |
 | `Bus` | Permanent bus record, assigned to one hotel, optional default coordinator. | `hotelId` required (RESTRICT delete); `registration` unique |
 | `BusStop` | Ordered route stops per bus; editable when routes change. | unique `(busId, sequence)`; `sequence > 0`; coords CHECK |
 | `Trip` | One run of a bus with a coordinator on board. Holds current `status`, `statusVersion`, `sharingLocation`. | **partial unique index: one active trip (`endedAt IS NULL`) per bus**; `endedAt >= startedAt` |
 | `BusLocation` | Latest position per bus (1 row per bus, overwritten). Separated from static data. | PK `busId`; coords + accuracy CHECK |
 | `LocationPoint` | Sampled trip history, pruned by retention policy. | index `(tripId, recordedAt)`, `recordedAt` |
 | `BusStatusEvent` | Status change history for accountability. | index `(tripId, createdAt)`, `(busId, createdAt)` |
-| `Session` | Server-side sessions; only the SHA-256 of the cookie token is stored. | `tokenHash` unique; index `userId`, `expiresAt` |
-| `RateLimitBucket` | Fixed-window counters for OTP/auth rate limiting. | PK `key`; index `expiresAt` |
+| `Session` | Server-side sessions; only the SHA-256 of the cookie token is stored; `eventId` = selected event. | `tokenHash` unique; index `userId`, `expiresAt` |
+| `RateLimitBucket` | Fixed-window counters for PIN/attendee sign-in and GPS rate limits. | PK `key`; index `expiresAt` |
 | `AuditLog` | Sensitive admin actions (who, what, which record, changed fields). | index `(entityType, entityId)`, `actorId`, `createdAt` |
-| `EventConfig` | Single row (`id = 1`): event name, stale-location threshold, GPS retention, history sampling. | `id = 1` CHECK; bounds CHECK |
+| `EventConfig` | Single row (`id = 1`), platform-wide: stale-location threshold, GPS retention, history sampling. | `id = 1` CHECK; bounds CHECK |
 
 Bus status enum: `BOARDING`, `TO_HOTEL`, `AT_HOTEL`, `TO_STOP`, `AT_STOP`.
 
@@ -50,3 +52,15 @@ Prisma can't express partial unique indexes or CHECK constraints. They are appen
 ## Seed data
 
 `prisma/seed.ts` creates fake demo data (2 hotels, 2 coordinators, 2 buses with stops, 10 attendees, 1 admin) with phone numbers in the `+9199999xxxxx` range. It upserts by stable keys, so it's safe to re-run, and it refuses to run unless `DATABASE_URL` points at `localhost`. It never creates an Owner.
+
+## Migration `20261019060000_events_membership_pin` (Phase 8)
+
+Hand-ordered for safety on existing data: creates `Event`/`EventMember`, adds nullable columns, then **only if hotels or attendees/coordinators exist** creates a default event `evt_default` (named from the old `EventConfig.eventName`), moves every hotel into it and turns each attendee/coordinator's `User.hotelId` into an `EventMember` row; then makes `Hotel.eventId` required, drops `User.hotelId` and `EventConfig.eventName`. On an empty database (first production deploy) no event is created. Verified on an empty database, the populated dev database and the test database; schema drift check clean. Production has never been deployed, so there is no production data to migrate yet.
+
+## Migration `20261019070000_drop_event_attendee_code`
+
+Drops the optional `Event.attendeeCodeHash` added in the previous migration (attendee event codes were removed before release). Never deployed to production.
+
+## Migration `20261019080000_drop_pin_setup_code`
+
+Drops `User.pinSetupCodeHash` and `User.pinSetupExpiresAt` (and the unique index): staff now choose their first PIN at sign-in when `pinHash` is null. Never deployed to production.

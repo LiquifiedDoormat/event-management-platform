@@ -17,27 +17,36 @@
   },
   "auth": {
     "title": "Sign in",
-    "intro": "Enter the mobile number you gave to the event organisers. We will send you a code by SMS.",
+    "intro": "Choose your event, then sign in.",
+    "event": "Event",
+    "noEvents": "No events are open for sign-in yet. Staff can sign in to create one.",
+    "whoAreYou": "I am",
+    "attendeeTab": "An attendee",
+    "staffTab": "Staff or coordinator",
     "phoneLabel": "Mobile number",
-    "phoneHint": "10-digit Indian mobile number, e.g. 98765 43210",
-    "sendCode": "Send code",
-    "sending": "Sending…",
-    "codeSent": "If this number is registered for the event, a 6-digit code has been sent to {phone}.",
-    "codeLabel": "Code from SMS",
-    "verify": "Sign in",
-    "verifying": "Checking…",
-    "changeNumber": "Use a different number",
-    "resend": "Send a new code",
-    "help": "Not getting a code? Ask your hotel coordinator or the event help desk to check your number.",
+    "phoneHint": "The number you registered with, e.g. 98765 43210",
+    "pinLabel": "6-digit PIN",
+    "newPinLabel": "Choose a 6-digit PIN",
+    "newPinHint": "Avoid easy PINs like 123456 or 111111. Don't share it.",
+    "confirmPinLabel": "Type the PIN again",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "setPinAndSignIn": "Save PIN and sign in",
+    "attendeeHelp": "Can't sign in? Ask your hotel coordinator or the event help desk to check your number.",
+    "forgotPin": "Forgot your PIN? Ask an event administrator to reset it, then sign in again and choose a new one.",
     "errors": {
-      "invalid_phone": "Please enter a valid mobile number.",
-      "invalid_code": "That code is not correct. Please check the SMS and try again.",
-      "code_expired": "This code has expired. Please ask for a new code.",
-      "rate_limited": "Too many attempts. Please wait a few minutes and try again.",
-      "provider_unavailable": "SMS service is not available right now. Please try again in a few minutes, or contact the event help desk.",
+      "invalid_credentials": "Those details didn't match. Check the event, your number and your PIN (or setup code), then try again.",
+      "no_event_access": "You're not registered for this event. Choose your event from the list, or ask the organisers.",
+      "weak_pin": "That PIN is too easy to guess. Choose a different one.",
+      "pin_mismatch": "The two PINs don't match.",
+      "rate_limited": "Too many attempts. Please wait 15 minutes and try again.",
       "network": "No internet connection. Please check your connection and try again.",
-      "generic": "Something went wrong. Please try again."
-    }
+      "generic": "Something went wrong. Please try again.",
+      "choose_event": "Please choose your event."
+    },
+    "continue": "Continue",
+    "choosePinIntro": "Welcome! Choose a 6-digit PIN for this account. You'll use it every time you sign in.",
+    "changeNumber": "Use a different number"
   },
   "dashboard": {
     "welcome": "Welcome, {name}",
@@ -64,7 +73,9 @@
     "assignedBuses": "Buses you accompany",
     "ownerTools": "Owner tools",
     "auditLog": "Audit log",
-    "eventSettings": "Event settings"
+    "eventSettings": "Event settings",
+    "myAttendees": "Attendees at my hotel",
+    "manageEvents": "Manage events"
   },
   "busStatus": {
     "BOARDING": "Boarding",
@@ -95,7 +106,8 @@
       "coordinatorOnTrip": "This coordinator is already on another trip.",
       "staleStatus": "The status was changed on another device. The latest status is now shown; please try again.",
       "tripEnded": "This trip has ended.",
-      "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings."
+      "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings.",
+      "noEventSelected": "Choose an event first."
     },
     "notFoundHelp": "It may have moved, or you may not have access to it.",
     "pageFailed": "This page could not be loaded",
@@ -142,7 +154,9 @@
       "outOfRange": "This number is out of range.",
       "invalidPhone": "Enter a valid mobile number.",
       "coordsPair": "Enter both latitude and longitude, or leave both empty.",
-      "invalid": "This value is not valid."
+      "invalid": "This value is not valid.",
+      "tooShort": "This is too short.",
+      "endBeforeStart": "The end date must be on or after the start date."
     }
   },
   "hotels": {
@@ -259,7 +273,13 @@
     "roleHint": "Changing from Coordinator removes their hotel and bus assignments.",
     "deactivate": "Deactivate account",
     "activate": "Reactivate account",
-    "confirmDeactivate": "Deactivate {name}? They will be signed out and cannot sign in."
+    "confirmDeactivate": "Deactivate {name}? They will be signed out and cannot sign in.",
+    "pinTitle": "PIN",
+    "pinIsSet": "PIN is set.",
+    "pinNotSet": "No PIN yet. They will choose one at their next sign-in.",
+    "pinLocked": "Locked after too many wrong PINs until {time}.",
+    "resetPin": "Reset PIN",
+    "confirmResetPin": "Reset the PIN for {name}? Their current PIN stops working, they are signed out, and they choose a new PIN at their next sign-in. Ask them to do it right away."
   },
   "transport": {
     "notRunning": "This bus is not running right now.",
@@ -277,8 +297,8 @@
     "openLastSeenInMaps": "Open last known location in Google Maps",
     "onBoard": "Coordinator on this bus",
     "callCoordinator": "Call {name}",
-    "liveOn": "Live updates on",
-    "polling": "Updates every 15 seconds"
+    "polling": "Updates automatically every 20 seconds while this page is open.",
+    "offline": "Can't reach the server. Showing the last known information; it will update when the connection returns."
   },
   "maps": {
     "hotelMap": "Map showing {name}",
@@ -319,12 +339,13 @@
     "confirmEnd": "End this trip? Location sharing will stop and attendees will see the bus is not running.",
     "staffTitle": "Trip",
     "correctStatus": "Correct status",
-    "needsCoordinator": "Assign a coordinator to this bus before starting a trip."
+    "needsCoordinator": "Assign a coordinator to this bus before starting a trip.",
+    "signedOut": "You've been signed out. Sign in again to continue sharing.",
+    "insecure": "Location sharing needs a secure (https://) page. Open the app's normal web address.",
+    "poorAccuracy": "Location is approximate (more than 100 m). This is common on laptops or indoors without GPS. Use a phone with GPS outdoors for accurate tracking."
   },
   "settings": {
     "title": "Event settings",
-    "eventName": "Event name",
-    "eventNameHint": "Shown to attendees on their homepage.",
     "stale": "Location counts as out of date after (seconds)",
     "staleHint": "Between 15 and 3600. Default 120. Older bus positions are labelled \"may be out of date\".",
     "sample": "Save route history every (seconds)",
@@ -343,11 +364,13 @@
       "Bus": "Bus",
       "User": "Person",
       "Trip": "Trip",
-      "EventConfig": "Event settings"
+      "EventConfig": "Event settings",
+      "Event": "Event"
     },
     "actions": {
       "auth": {
-        "login": "Signed in"
+        "pinSet": "PIN chosen at sign-in",
+        "pinLocked": "Account locked after wrong PINs"
       },
       "owner": {
         "bootstrap": "Owner account created (setup script)",
@@ -378,7 +401,9 @@
         "reassignHotel": "Attendee hotel changed",
         "changeRole": "Role changed",
         "activate": "Account reactivated",
-        "deactivate": "Account deactivated"
+        "deactivate": "Account deactivated",
+        "resetPin": "PIN reset by staff",
+        "addToEvent": "Registered for another event"
       },
       "trip": {
         "start": "Trip started",
@@ -387,6 +412,12 @@
       },
       "config": {
         "update": "Event settings changed"
+      },
+      "event": {
+        "create": "Event created",
+        "update": "Event changed",
+        "activate": "Event reactivated",
+        "deactivate": "Event deactivated"
       }
     },
     "showSignIns": "Show sign-ins"
@@ -404,5 +435,28 @@
     "languageHint": "The app opens in this language when you sign in.",
     "saveLanguage": "Save language",
     "languageSaved": "Language saved."
+  },
+  "events": {
+    "title": "Events",
+    "add": "Add an event",
+    "create": "Create event",
+    "edit": "Edit event",
+    "name": "Event name",
+    "startsOn": "Starts on",
+    "endsOn": "Ends on",
+    "counts": "{hotels, plural, one {# hotel} other {# hotels}} · {members, plural, one {# registered person} other {# registered people}}",
+    "current": "Current event",
+    "inactive": "inactive",
+    "switch": "Switch",
+    "deactivate": "Deactivate event",
+    "activate": "Reactivate event",
+    "deactivateHelp": "Inactive events disappear from the sign-in list. Nothing is deleted.",
+    "confirmDeactivate": "Deactivate this event? Attendees and coordinators will no longer be able to sign in to it."
+  },
+  "myAttendees": {
+    "title": "Attendees at my hotel",
+    "intro": "People staying at the hotel(s) you coordinate for this event.",
+    "searchPlaceholder": "Name or phone number",
+    "none": "No attendees are assigned to your hotel yet."
   }
 }

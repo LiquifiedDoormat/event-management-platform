@@ -21,7 +21,7 @@ const SEND_TIMEOUT_MS = 10_000;
 const MAX_BACKOFF_MS = 30_000;
 const RESUME_KEY = "gps-sharing-trip";
 
-export type SharingPhase = "idle" | "requesting" | "sharing" | "denied" | "unsupported" | "ended";
+export type SharingPhase = "idle" | "requesting" | "sharing" | "denied" | "unsupported" | "ended" | "signedOut";
 export type SharingState = {
   phase: SharingPhase;
   /** Last reading accepted by the server. */
@@ -105,6 +105,13 @@ export function useGeolocationSharing(tripId: string, onStopped?: () => void) {
           body: JSON.stringify({ tripId, ...pos }),
           signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         });
+        if (res.status === 401) {
+          // Session expired or revoked: stop; the coordinator must sign in again.
+          teardown();
+          sessionStorage.removeItem(RESUME_KEY);
+          update({ phase: "signedOut", networkError: false });
+          return;
+        }
         if (res.status === 409 || res.status === 403 || res.status === 404) {
           // Trip ended or no longer ours: stop for good.
           teardown();
