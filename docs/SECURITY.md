@@ -9,23 +9,29 @@
 ## Secrets
 
 - `.env` and `.env.*` are git-ignored; `.env.example` holds placeholders only.
-- `NEXT_PUBLIC_*` variables reach the browser. Only the restricted Google Maps browser key and the Pusher public key/cluster belong there.
+- `NEXT_PUBLIC_*` variables reach the browser. Only the (optional) restricted Google Maps browser key belongs there.
 - The local Docker database password comes from `.env`. The CI workflow uses a throwaway `ci:ci` database that exists only inside the job's container.
-- Never log OTPs, session tokens, provider credentials or full phone numbers (use `maskPhone`). Exception: the `dev` OTP provider prints codes to the local console by design; it is refused when `NODE_ENV=production`.
+- Never log PINs, setup codes, session tokens or full phone numbers (use `maskPhone`). The Owner CLI prints a setup code once, to the operator's terminal.
 
-## Authentication (implemented, Phase 2)
+## Authentication (Phase 8: no SMS/OTP)
 
 | Concern | Implementation |
 | --- | --- |
-| OTP delivery/verification | `OtpProvider` interface (`src/lib/auth/otp/`). `twilio`: Twilio Verify REST API (Twilio generates, sends and checks codes; we store nothing). `dev`: local only; codes hashed in memory, 10-minute expiry, 5 attempts. |
-| Account provisioning | Login only works for existing, ACTIVE accounts created by staff. The phone number identifies the account; it doesn't create one. |
-| Enumeration | `/api/auth/otp/request` returns the same `{sent: true}` for unknown, inactive and registered numbers (no SMS is sent for the first two). Verify failures return a generic `invalid_code`. Note: response timing can still differ slightly because only registered numbers call the SMS provider. |
-| Rate limits | `src/lib/rate-limit` (PostgreSQL, hashed keys). Send: 5/phone and 30/IP per 15 min. Verify: 8/phone and 60/IP per 15 min (phone counter reset on success). Twilio Verify adds its own limits. |
-| Sessions | 256-bit random token in cookie `__Host-session` (`session` in dev): HttpOnly, Secure (prod), SameSite=Lax, Path=/. DB stores only SHA-256(token). Valid for 30 days of inactivity, extended at most once a day on use. |
-| Revocation | Sign-out revokes the session row. `revokeAllSessions(userId)` signs a user out everywhere. Deactivated users fail validation immediately even before revocation. |
-| CSRF | SameSite=Lax cookie, plus `isSameOrigin()` on every state-changing route handler (Origin must equal `APP_URL`; falls back to `Sec-Fetch-Site: same-origin`). |
-| Provider outage | Returns `provider_unavailable` (HTTP 503) with a translated message asking users to retry or contact the help desk. Existing sessions are unaffected, so signed-in users keep working. |
-| Owner accounts | Created only by `npm run owner:create` (needs direct DB access). The app can never grant OWNER. |
+| Staff sign-in | Owner/Admin/Coordinator: phone + 6-digit PIN (`src/server/services/auth.ts`). PINs hashed with scrypt (N=16384, r=8, p=1, 16-byte salt; `src/lib/auth/pin.ts`); never stored or logged in clear. Weak PINs (one repeated digit, straight runs) refused. |
+| First PIN / reset | Requires a **one-time setup code** (10 random characters, SHA-256 stored, 7-day expiry, single use) issued by an authorized admin (Owner → Admin/Coordinator; Admin → Coordinator) or, for Owners, by `npm run owner:create -- --reset-pin` (needs DB access). Issuing a code clears the PIN and revokes all sessions. Nobody can set a PIN for another account by knowing the phone number. |
+| Brute force | Per-account lockout: 5 wrong PINs → 15 min lock (audited). Rate limits (PostgreSQL, hashed keys): 10/15 min per phone, 60/15 min per IP for PIN and setup attempts. |
+| Attendee sign-in | Phone number registered (EventMember) for the chosen active event, plus the event's **shared attendee code** if the event has one (SHA-256 stored, compared in constant time). Rate limits: 10/15 min per phone, 120/15 min per IP. Attendee sessions are read-only by role. |
+| Enumeration | All failures return the same `invalid_credentials` (unknown number, wrong PIN, no PIN yet, wrong event for attendees). Only a correct PIN can reveal "not registered for this event". Lockout responses can reveal that a number has a privileged account after 5 failures. |
+| Event access | Session stores the selected event; `validateSession` re-checks it on every request: attendees/coordinators must still be registered and the event active; Owner/Admin may access every event. Switching events is a server action that re-checks access and never changes memberships. |
+| Sessions | 256-bit random token in cookie `__Host-session` (`session` in dev): HttpOnly, Secure (prod), SameSite=Lax. DB stores SHA-256 only. 30 days of inactivity, renewed ≤ once/day. Sign-out revokes; deactivation, phone change, role change and PIN reset revoke all sessions. |
+| CSRF | SameSite=Lax + `isSameOrigin()` on JSON routes (Origin = request host or `APP_URL`); Server Actions have Next.js's origin check. |
+| Owner accounts | Only via `npm run owner:create`; the app can never grant OWNER. |
+
+### Residual risks (accepted, documented)
+
+- **6-digit PIN** = 1,000,000 combinations. Lockout + rate limits make online guessing slow (≈ 480 guesses/day per account), but a PIN is weaker than a strong password and can be shoulder-surfed. Mitigations: weak-PIN rejection, lockout alerts in the audit log, admin resets.
+- **Attendee impersonation:** anyone who knows an attendee's phone number (and the event code, if used) can view that attendee's read-only page: their hotel, its coordinator's contact, their buses and stops. They cannot change anything or see other attendees. Using an event code blocks outsiders who only have a phone number; it does not stop other attendees of the same event. Stronger protection would need per-person codes or SMS (cost).
+- **Setup codes** are as sensitive as a temporary password until used; hand them over privately.
 
 ## Permission matrix (implemented in `src/server/policies/index.ts`)
 
@@ -38,7 +44,11 @@
 | Deactivate hotels, buses, people | ✅ | — | — | — |
 | First hotel allotment for an attendee (no hotel yet) | ✅ | ✅ | — | — |
 | Change attendee hotel; hotel coordinator; bus hotel; bus coordinator | ✅ | — | — | — |
-| Change roles; event settings; audit log | ✅ | — | — | — |
+| Change roles; platform settings; audit log | ✅ | — | — | — |
+| Create / edit events (any event); switch events | ✅ | ✅ | switch between own events only | — |
+| Deactivate / reactivate events | ✅ | — | — | — |
+| Reset PIN (issue setup code) | Admins, Coordinators | Coordinators | — | — |
+| Search attendees of own hotel(s) in current event | ✅ (People) | ✅ (People) | ✅ | — |
 | Start/end trips | ✅ | ✅ | own designated buses | — |
 | Change bus status | ✅ (correction) | ✅ (correction) | own active trip | — |
 | Send GPS location | — | — | own active trip only | — |
@@ -70,7 +80,7 @@ Pages have a `loading.tsx`, so responses stream: a signed-out request for a prot
 
 Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (geolocation on our own origin only), `Strict-Transport-Security`. API responses send `Cache-Control: no-store`.
 
-**Content-Security-Policy** (`src/proxy.ts`): a fresh nonce per page request; `script-src 'self' 'nonce-…' 'strict-dynamic'` (+ Maps loader; `'unsafe-eval'` only in development), `style-src` allows inline styles (Google Maps needs them), images/connect limited to self, Google Maps and Pusher, `object-src 'none'`, `frame-ancestors 'none'`, `form-action 'self'`, `upgrade-insecure-requests` in production. Verified in dev and in a local production build (no violations, pages hydrate). Not yet verified with live Google Maps/Pusher on a real deployment.
+**Content-Security-Policy** (`src/proxy.ts`): a fresh nonce per page request; `script-src 'self' 'nonce-…' 'strict-dynamic'` (+ Maps loader; `'unsafe-eval'` only in development), `style-src` allows inline styles (Google Maps needs them), images/connect limited to self and Google Maps, `object-src 'none'`, `frame-ancestors 'none'`, `form-action 'self'`, `upgrade-insecure-requests` in production. Verified in dev and in a local production build (no violations, pages hydrate). Not yet verified with a live Google Maps key on a real deployment.
 
 **Same-origin check** (`isSameOrigin`): the browser's `Origin` must match the request's own host (works on preview URLs) or `APP_URL`.
 
@@ -88,5 +98,4 @@ Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Ref
 ## Pending
 
 - Cleanup job for expired sessions and rate-limit buckets (Phase 7 operations).
-- Content-Security-Policy (after Maps/Pusher integration).
-- Twilio integration not yet verified against a real account.
+- PIN sign-in verified locally (tests + API); not yet on a deployment.
