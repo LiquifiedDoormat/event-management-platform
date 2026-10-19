@@ -36,6 +36,16 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 - Services throw `AppError` (`src/server/errors.ts`) with a stable `reason` translated under `errors.reasons.*`.
 - Only the `common`, `auth`, `nav`, `forms` and `errors` message namespaces are sent to the browser; server components translate everything else.
 
+## Accessibility and i18n conventions (Phase 6)
+
+- Every page has one `h1`; sections use `h2`. A translated skip link targets `<main id="main">`.
+- Interactive elements are at least 44 px tall (`min-h-11`/`min-h-12`); "Back" links use `<BackLink>`. Icons are decorative (`aria-hidden`) and always accompanied by text.
+- Live regions: status/location panels use `aria-live="polite"`; form errors use `role="alert"`.
+- `[locale]/loading.tsx` (translated, spinner respects reduced motion), `[locale]/error.tsx` (translated, `retry()`), `[locale]/not-found.tsx`.
+- Language switcher keeps the query string; users' preferred language (`User.preferredLocale`) is set on `/profile` and used after sign-in.
+- Audit action labels live under `audit.actions.<group>.<name>` in both locales; unknown actions fall back to the raw key.
+- Soft hyphens (U+00AD) may be used in long nav labels.
+
 ## Roles
 
 `OWNER`, `ADMIN`, `COORDINATOR`, `CUSTOMER`. The brief names three account types; coordinators are given their own role so their extra power (controlling an assigned bus trip) is granted explicitly rather than by making them Admins. A coordinator's scope is their designated hotel and the trips they are assigned to.

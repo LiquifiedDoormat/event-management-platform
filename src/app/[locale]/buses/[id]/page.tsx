@@ -1,5 +1,6 @@
 import { getFormatter, getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
+import { BackLink } from "@/components/ui/BackLink";
 import { can } from "@/server/policies";
 import { getBus } from "@/server/services/buses";
 import { hotelOptions } from "@/server/services/hotels";
@@ -42,9 +43,7 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
 
   return (
     <section className="flex flex-col gap-5">
-      <Link href="/buses" className="text-brand font-semibold">
-        ◀ {t("title")}
-      </Link>
+      <BackLink href="/buses" label={t("title")} />
       <PageHeader title={`🚌 ${bus.label}`} />
       <Link href={`/track/${bus.id}`} className="text-brand font-semibold underline">
         👁 {t("attendeeView")}

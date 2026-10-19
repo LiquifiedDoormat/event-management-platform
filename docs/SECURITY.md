@@ -57,6 +57,15 @@ Mutations from pages go through Server Actions (`src/features/admin/actions.ts`)
 - `GET /api/buses/{id}/live`: same access rule; 404 for anything not viewable.
 - GPS history is sampled (default every 30 s) and pruned after 7 days (`npm run ops:prune`); the live position is deleted when a trip ends.
 
+## Owner-only pages
+
+- `/owner/audit` (`audit.view`) and `/owner/settings` (`config.update`) are Owner-only in the services, not just the pages. Settings bounds match the database CHECK constraint; each save is audited with the changed fields only.
+- Users can change only their own preferred language (`/profile`); name, phone and hotel are staff-managed.
+
+## Page redirects while streaming
+
+Pages have a `loading.tsx`, so responses stream: a signed-out request for a protected page returns HTTP 200 containing only a redirect (client redirect + `<meta http-equiv="refresh">` to `/login`). `requireUser` runs before any data is loaded, so no protected content is sent. JSON API routes still return 401/403.
+
 ## HTTP headers
 
 Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (geolocation on our own origin only), `Strict-Transport-Security`. A Content-Security-Policy will be added once the Google Maps and Pusher origins are wired in. API responses send `Cache-Control: no-store`.

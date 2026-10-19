@@ -26,7 +26,7 @@ export default async function BusesPage({ params, searchParams }: PageProps<"/[l
   return (
     <section className="flex flex-col gap-5">
       <PageHeader title={t("title")} action={can(user, "bus.create") ? { href: "/buses/new", label: t("add") } : undefined} />
-      <SearchForm q={q} placeholder={t("searchPlaceholder")}>
+      <SearchForm q={q} placeholder={t("searchPlaceholder")} activeFilters={[hotelId, show].filter(Boolean).length}>
         <FilterSelect name="hotelId" label={t("hotel")} value={hotelId} allLabel={td("all")} options={hotels.map((h) => ({ value: h.id, label: h.name }))} />
         <FilterSelect name="show" label={td("show")} value={show} allLabel={td("activeOnly")} options={[{ value: "all", label: td("includeInactive") }]} />
       </SearchForm>

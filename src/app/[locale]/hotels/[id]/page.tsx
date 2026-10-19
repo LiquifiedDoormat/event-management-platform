@@ -1,5 +1,6 @@
 import { getFormatter, getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
+import { BackLink } from "@/components/ui/BackLink";
 import { can } from "@/server/policies";
 import { getHotel } from "@/server/services/hotels";
 import { coordinatorOptions } from "@/server/services/people";
@@ -25,9 +26,7 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
 
   return (
     <section className="flex flex-col gap-5">
-      <Link href="/hotels" className="text-brand font-semibold">
-        ◀ {t("title")}
-      </Link>
+      <BackLink href="/hotels" label={t("title")} />
       <PageHeader title={hotel.name} />
       {!hotel.isActive && <Badge tone="danger">{tc("inactive")}</Badge>}
 

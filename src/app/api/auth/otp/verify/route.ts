@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     switch (result.status) {
       case "ok": {
         (await cookies()).set(SESSION_COOKIE, result.token, sessionCookieOptions);
-        return ok({ redirectTo: roleHome(result.user.role) });
+        return ok({ redirectTo: roleHome(result.user.role), locale: result.user.preferredLocale });
       }
       case "invalid":
         return fail("invalid_code", 400);

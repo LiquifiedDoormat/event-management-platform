@@ -22,7 +22,7 @@ export default async function HotelsPage({ params, searchParams }: PageProps<"/[
   return (
     <section className="flex flex-col gap-5">
       <PageHeader title={t("title")} action={can(user, "hotel.create") ? { href: "/hotels/new", label: t("add") } : undefined} />
-      <SearchForm q={q} placeholder={t("searchPlaceholder")}>
+      <SearchForm q={q} placeholder={t("searchPlaceholder")} activeFilters={show ? 1 : 0}>
         <FilterSelect name="show" label={td("show")} value={show} allLabel={td("activeOnly")} options={[{ value: "all", label: td("includeInactive") }]} />
       </SearchForm>
       {page.items.length === 0 ? (
