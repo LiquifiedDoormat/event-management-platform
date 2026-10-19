@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
 import { hashPin } from "@/lib/auth/pin";
 import { revokeAllSessions, validateSession } from "@/lib/auth/session";
-import { hashAttendeeCode, issueSetupCode, loginAttendee, loginWithPin, logout, setupPin } from "@/server/services/auth";
+import { issueSetupCode, loginAttendee, loginWithPin, logout, setupPin } from "@/server/services/auth";
 import { createEvent, createTwoHotels, createUser, defaultEvent, hasTestDb, resetDb } from "./helpers";
 
 const ip = "203.0.113.7";
@@ -127,7 +127,7 @@ describe.skipIf(!hasTestDb)("PIN sign-in for Owner, Admin and Coordinator", () =
   });
 });
 
-describe.skipIf(!hasTestDb)("attendee sign-in (no PIN, no SMS)", () => {
+describe.skipIf(!hasTestDb)("attendee sign-in (phone + event; no PIN, no SMS)", () => {
   beforeEach(resetDb);
 
   it("signs a registered attendee into their event with read-only role and their hotel", async () => {
@@ -147,13 +147,6 @@ describe.skipIf(!hasTestDb)("attendee sign-in (no PIN, no SMS)", () => {
     expect(await loginAttendee({ phone: "+919812300001", eventId: await defaultEvent(), ip })).toEqual({ status: "invalid" });
   });
 
-  it("requires the event's shared attendee code when one is set", async () => {
-    const coded = await createEvent("Coded", { attendeeCodeHash: hashAttendeeCode("ExPo26") });
-    const guest = await createUser("CUSTOMER", { eventId: coded.id });
-    expect((await loginAttendee({ phone: guest.phone, eventId: coded.id, ip })).status).toBe("invalid");
-    expect((await loginAttendee({ phone: guest.phone, eventId: coded.id, accessCode: "wrong", ip })).status).toBe("invalid");
-    expect((await loginAttendee({ phone: guest.phone, eventId: coded.id, accessCode: " expo26 ", ip })).status).toBe("ok");
-  });
 
   it("refuses inactive events and ends sessions when the attendee is removed from the event", async () => {
     const { eventId, guestA } = await createTwoHotels();

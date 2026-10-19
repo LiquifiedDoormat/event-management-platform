@@ -7,7 +7,7 @@ PostgreSQL 17 (local: Docker; production: a managed service such as Neon or Supa
 | Model | Purpose | Key constraints |
 | --- | --- | --- |
 | `User` | Every account (Owner, Admin, Coordinator, Customer), one per phone. PIN fields: `pinHash` (scrypt), `pinSetupCodeHash`/`pinSetupExpiresAt` (one-time code), `failedPinAttempts`, `pinLockedUntil`. | `phone` unique, E.164 CHECK; `pinSetupCodeHash` unique; index `(role,status)`, `name` |
-| `Event` | An independent event: name, dates, active flag, optional `attendeeCodeHash`. | dates CHECK; index `(isActive,name)` |
+| `Event` | An independent event: name, dates, active flag. | dates CHECK; index `(isActive,name)` |
 | `EventMember` | Attendee/coordinator registration for an event; `hotelId` = attendee's hotel in that event. | unique `(eventId,userId)`; index `userId`, `hotelId` |
 | `Hotel` | Belongs to one event (`eventId`); address, coordinates, notes, active flag. | unique `(eventId, coordinatorId)` (a coordinator designates at most one hotel per event); coords CHECK |
 | `Bus` | Permanent bus record, assigned to one hotel, optional default coordinator. | `hotelId` required (RESTRICT delete); `registration` unique |
@@ -56,3 +56,7 @@ Prisma can't express partial unique indexes or CHECK constraints. They are appen
 ## Migration `20261019060000_events_membership_pin` (Phase 8)
 
 Hand-ordered for safety on existing data: creates `Event`/`EventMember`, adds nullable columns, then **only if hotels or attendees/coordinators exist** creates a default event `evt_default` (named from the old `EventConfig.eventName`), moves every hotel into it and turns each attendee/coordinator's `User.hotelId` into an `EventMember` row; then makes `Hotel.eventId` required, drops `User.hotelId` and `EventConfig.eventName`. On an empty database (first production deploy) no event is created. Verified on an empty database, the populated dev database and the test database; schema drift check clean. Production has never been deployed, so there is no production data to migrate yet.
+
+## Migration `20261019070000_drop_event_attendee_code`
+
+Drops the optional `Event.attendeeCodeHash` added in the previous migration (attendee event codes were removed before release). Never deployed to production.

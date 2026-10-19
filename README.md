@@ -7,7 +7,7 @@ Mobile-first, English/Hindi web app for running event logistics across **multipl
 ## Features
 
 - **Events:** independent events, each with its own hotels, buses, coordinators and attendees; chosen on the sign-in page; Owner/Admin can switch events without signing out.
-- **Sign-in without SMS:** Owner/Admin/Coordinator use phone + 6-digit PIN (first PIN and resets via a one-time setup code from an administrator); attendees use phone + event (+ an optional shared event code). Persistent sessions; sign-out.
+- **Sign-in without SMS:** Owner/Admin/Coordinator use phone + 6-digit PIN (first PIN and resets via a one-time setup code from an administrator); attendees use phone number + event. Persistent sessions; sign-out.
 - **Roles:** Owner, Admin, Coordinator, Attendee (read-only), enforced on the server.
 - Hotel, bus (with stops), coordinator and people directories; assignments; audit log.
 - Coordinators: trip controls, large status buttons, GPS sharing from the phone, searchable list of attendees at their hotel.
@@ -67,7 +67,7 @@ The demo PIN exists only in local seed data.
   ```bash
   npm run owner:create -- --phone "98765 43210" --reset-pin
   ```
-- **Attendees:** phone number registered for the chosen event. Optionally, each event can require a **shared attendee code** (set on the event page; printed on invitations or given at the desk) so that knowing someone's phone number alone isn't enough. Attendees are read-only. See [docs/SECURITY.md](docs/SECURITY.md) for the residual risks.
+- **Attendees:** phone number registered for the chosen event; no PIN or code. Attendees are read-only. See [docs/SECURITY.md](docs/SECURITY.md) for the residual risk.
 
 ## Live updates and maps (no paid providers)
 
@@ -145,4 +145,4 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 
 ## Current limitations
 
-GPS sharing works only while the coordinator's page is open and on screen; not yet tested on a real phone. Attendee pages update every 20 s (no push). Attendee sign-in by phone number (+ optional event code) can be impersonated by someone who knows both. No road-route drawing. Accessibility checked by hand, not with assistive-technology users.
+GPS sharing works only while the coordinator's page is open and on screen; not yet tested on a real phone. Attendee pages update every 20 s (no push). Attendee sign-in uses only the phone number, so someone who knows an attendee's number and event can view that attendee's (read-only) page. No road-route drawing. Accessibility checked by hand, not with assistive-technology users.

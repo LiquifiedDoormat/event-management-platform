@@ -6,7 +6,7 @@ Target setup (all managed, India region where possible):
 | --- | --- | --- |
 | App (Next.js) | Vercel (project already connected to the GitHub repo) | `bom1` Mumbai (set in `vercel.json`) |
 | Database | Neon Postgres (or Supabase) | AWS `ap-south-1` Mumbai |
-| Sign-in | Built in (PIN / phone + event code) — no provider | — |
+| Sign-in | Built in (PIN for staff / phone number for attendees) — no provider | — |
 | Live updates | Built in (polling) — no provider | — |
 | Maps | "Open in Google Maps" links (free); embedded map optional (Google billing account) | — |
 

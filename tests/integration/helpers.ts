@@ -13,7 +13,7 @@ let n = 0;
 /** Unique valid Indian mobile number per call. */
 export const nextPhone = () => `+9198${String(10_000_000 + ++n).slice(-8)}`;
 
-export function createEvent(name = `Event ${++n}`, data: { isActive?: boolean; attendeeCodeHash?: string } = {}) {
+export function createEvent(name = `Event ${++n}`, data: { isActive?: boolean } = {}) {
   return prisma.event.create({ data: { name, ...data } });
 }
 

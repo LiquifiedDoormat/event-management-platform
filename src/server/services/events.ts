@@ -5,7 +5,7 @@ import { setSessionEvent } from "@/lib/auth/session";
 import { can, isStaff, type Actor } from "@/server/policies";
 import { forbidden, notFound } from "@/server/errors";
 import { audit } from "./audit";
-import { canAccessEvent, hashAttendeeCode } from "./auth";
+import { canAccessEvent } from "./auth";
 
 const emptyToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
 const date = z.preprocess(emptyToUndefined, z.coerce.date({ error: "invalid" }).optional());
@@ -15,9 +15,6 @@ export const eventInput = z
     name: z.string().trim().min(1, "required").max(120, "tooLong"),
     startsOn: date,
     endsOn: date,
-    /** "keep" (unchanged), "clear", or a new code to set. */
-    attendeeCode: z.preprocess(emptyToUndefined, z.string().trim().min(4, "tooShort").max(40, "tooLong").optional()),
-    clearAttendeeCode: z.preprocess((v) => v === "on" || v === "true", z.boolean()).optional(),
   })
   .refine((v) => !v.startsOn || !v.endsOn || v.endsOn >= v.startsOn, { message: "endBeforeStart", path: ["endsOn"] });
 export type EventInput = z.infer<typeof eventInput>;
@@ -46,7 +43,6 @@ export async function listEvents(actor: Actor) {
       startsOn: true,
       endsOn: true,
       isActive: true,
-      attendeeCodeHash: true,
       _count: { select: { hotels: true, members: true } },
     },
   });
@@ -56,7 +52,7 @@ export async function getEvent(actor: Actor, id: string) {
   if (!can(actor, "event.update")) throw forbidden();
   const event = await prisma.event.findUnique({
     where: { id },
-    select: { id: true, name: true, startsOn: true, endsOn: true, isActive: true, attendeeCodeHash: true, updatedAt: true },
+    select: { id: true, name: true, startsOn: true, endsOn: true, isActive: true, updatedAt: true },
   });
   if (!event) throw notFound();
   return event;
@@ -67,7 +63,6 @@ function data(input: EventInput) {
     name: input.name,
     startsOn: input.startsOn ?? null,
     endsOn: input.endsOn ?? null,
-    ...(input.clearAttendeeCode ? { attendeeCodeHash: null } : input.attendeeCode ? { attendeeCodeHash: hashAttendeeCode(input.attendeeCode) } : {}),
   };
 }
 
@@ -85,10 +80,7 @@ export async function updateEvent(actor: Actor, id: string, input: EventInput) {
   await prisma.$transaction(async (tx) => {
     if (!(await tx.event.findUnique({ where: { id }, select: { id: true } }))) throw notFound();
     await tx.event.update({ where: { id }, data: data(input) });
-    await audit(tx, actor, "event.update", "Event", id, {
-      fields: ["name", "dates"],
-      attendeeCode: input.clearAttendeeCode ? "cleared" : input.attendeeCode ? "changed" : "unchanged",
-    });
+    await audit(tx, actor, "event.update", "Event", id, { fields: ["name", "dates"] });
   });
 }
 

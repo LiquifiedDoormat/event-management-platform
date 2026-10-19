@@ -40,7 +40,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const digitsOnly = (v: string) => v.replace(/\D/g, "").slice(0, 6);
 
 /**
- * Sign-in without SMS. Attendees: event + phone (+ event code if the event uses one).
+ * Sign-in without SMS. Attendees: event + phone.
  * Staff/coordinators: event + phone + PIN; first time or after a reset: setup code + new PIN.
  */
 export function LoginForm({ events }: { events: { id: string; name: string }[] }) {
@@ -64,7 +64,7 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
     const event = eventId || null;
     const result =
       mode === "attendee"
-        ? await post("/api/auth/attendee", { eventId: event, phone, accessCode: code || undefined })
+        ? await post("/api/auth/attendee", { eventId: event, phone })
         : mode === "staff"
           ? await post("/api/auth/pin", { eventId: event, phone, pin })
           : await post("/api/auth/setup-pin", { eventId: event, phone, setupCode: code, pin, pinConfirm });
@@ -135,11 +135,6 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
         {(id) => <input id={id} type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />}
       </Field>
 
-      {mode === "attendee" && (
-        <Field label={t("accessCodeLabel")} hint={t("accessCodeHint")}>
-          {(id) => <input id={id} type="text" autoComplete="off" autoCapitalize="characters" value={code} onChange={(e) => setCode(e.target.value)} className={inputClass} />}
-        </Field>
-      )}
 
       {mode === "setup" && (
         <Field label={t("setupCodeLabel")} hint={t("setupCodeHint")}>

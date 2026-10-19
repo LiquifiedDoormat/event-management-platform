@@ -5,13 +5,13 @@ import { createSession, revokeSession, type SessionUser } from "@/lib/auth/sessi
 import { hashPin, hashSetupCode, isWeakPin, newSetupCode, PIN_PATTERN, SETUP_CODE_DAYS, verifyPin } from "@/lib/auth/pin";
 import { rateLimit, resetRateLimit } from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/utils/phone";
-import { safeEqual, sha256 } from "@/lib/utils/crypto";
+import { safeEqual } from "@/lib/utils/crypto";
 
 // Sign-in without paid SMS:
 // - Owner/Admin/Coordinator: phone + 6-digit PIN. The first PIN (and any reset)
 //   needs a one-time setup code issued by an authorized admin, so nobody can set
 //   a PIN on someone else's account just by knowing their phone number.
-// - Attendees: phone + event (+ the event's shared attendee code, if set).
+// - Attendees: registered phone number + event.
 //   Attendee sessions are read-only by role (see policies).
 // Every path chooses an event; access to it is checked here and on every request.
 
@@ -145,21 +145,14 @@ export async function setupPin(input: {
   return startSession(user, eventId, input.userAgent);
 }
 
-/**
- * Attendee sign-in: registered phone number for the chosen event, plus the
- * event's shared attendee code when one is set. No PIN, no SMS.
- */
-export async function loginAttendee(input: { phone: string; eventId: string; accessCode?: string; ip: string; userAgent?: string | null }): Promise<LoginResult> {
+/** Attendee sign-in: registered phone number for the chosen event. No PIN, no SMS. */
+export async function loginAttendee(input: { phone: string; eventId: string; ip: string; userAgent?: string | null }): Promise<LoginResult> {
   const phone = normalizePhone(input.phone);
   if (!phone || !input.eventId) return { status: "invalid" };
   const limit = await limited("attendee", phone, input.ip);
   if (limit) return limit;
 
-  const event = await prisma.event.findFirst({ where: { id: input.eventId, isActive: true }, select: { attendeeCodeHash: true } });
-  if (!event) return { status: "invalid" };
-  if (event.attendeeCodeHash && !safeEqual(event.attendeeCodeHash, sha256((input.accessCode ?? "").trim().toUpperCase()))) {
-    return { status: "invalid" };
-  }
+  if (!(await prisma.event.count({ where: { id: input.eventId, isActive: true } }))) return { status: "invalid" };
   const user = await prisma.user.findFirst({
     where: { phone, status: "ACTIVE", role: "CUSTOMER", memberships: { some: { eventId: input.eventId } } },
     select: { id: true, role: true, preferredLocale: true },
@@ -167,9 +160,6 @@ export async function loginAttendee(input: { phone: string; eventId: string; acc
   if (!user) return { status: "invalid" };
   return startSession(user, input.eventId, input.userAgent);
 }
-
-/** Hashes an event's shared attendee code (case-insensitive). */
-export const hashAttendeeCode = (code: string) => sha256(code.trim().toUpperCase());
 
 /**
  * Issues a fresh one-time setup code (shown once to the issuer). Clears the

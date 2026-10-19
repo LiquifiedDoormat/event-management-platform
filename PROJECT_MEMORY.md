@@ -11,7 +11,7 @@ The repository's verified state takes precedence over this file. If they disagre
 ## 1. Project Overview
 
 - **Purpose:** Mobile-first, bilingual (English/Hindi) event management web app for **multiple independent events**: hotels, hotel coordinators, buses and attendees, with coordinator-shared live bus GPS.
-- **Zero-recurring-cost policy (Phase 8):** no SMS/OTP, realtime or map provider. Sign-in is built in (PIN / phone + event code); live updates poll the server; maps default to "Open in Google Maps" links. Remaining possible costs: hosting, database, optional domain (see DEPLOYMENT.md › Cost review).
+- **Zero-recurring-cost policy (Phase 8):** no SMS/OTP, realtime or map provider. Sign-in is built in (PIN for staff / phone number + event for attendees); live updates poll the server; maps default to "Open in Google Maps" links. Remaining possible costs: hosting, database, optional domain (see DEPLOYMENT.md › Cost review).
 - **Roles:** `OWNER` (everything, all events; only via CLI), `ADMIN` (manage operational records in any event; create/edit events; reset Coordinator PINs), `COORDINATOR` (their hotel/buses/trips in events they're registered for; attendee search), `CUSTOMER` (attendee; read-only; own hotel in the selected event).
 - **Stack:** Next.js 16.4, TypeScript strict, Tailwind 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. Optional Google Maps JS via `@vis.gl/react-google-maps`. **Removed in Phase 8:** Twilio (REST, no SDK), `pusher`, `pusher-js`.
 - **Package manager:** npm. Node ≥ 22 (developed on Node 26).
@@ -20,7 +20,7 @@ The repository's verified state takes precedence over this file. If they disagre
 ## 2. Current Project Status
 
 - **Stage:** Phase 8 implemented and verified locally on `feat/phase-8-events-pin` (2 local commits, not pushed). Phase 7 tooling is in PR #7 (open, CI green, **not merged**). Production never deployed.
-- **Completed (verified locally):** Phases 1–7; Phase 8: events + memberships + migration, PIN sign-in with setup codes/lockout, attendee phone+event(+code) sign-in, event isolation across all services, event create/edit/deactivate + server-checked switching, coordinator attendee search, PIN reset UI, Twilio/OTP/Pusher removal, polling live updates, tracking HTTPS/accuracy/signed-out states, docs + cost review.
+- **Completed (verified locally):** Phases 1–7; Phase 8: events + memberships + migration, PIN sign-in with setup codes/lockout, attendee phone+event sign-in, event isolation across all services, event create/edit/deactivate + server-checked switching, coordinator attendee search, PIN reset UI, Twilio/OTP/Pusher removal, polling live updates, tracking HTTPS/accuracy/signed-out states, docs + cost review.
 - **Unverified:** real smartphone GPS; real laptop geolocation (browser pane blocks geolocation); Google Maps with a key; any deployment of Phases 7–8; k6 load test.
 - **Blocked:** deployment needs owner accounts (Neon + Vercel env vars) — Twilio and Pusher are **no longer needed**.
 
@@ -122,8 +122,8 @@ AGENTS.md                       Next.js agent rules (auto-maintained block) + po
 
 ## 4. Architecture and Data Model
 
-- **Phase 8 model:** `Event` (name, dates, isActive, attendeeCodeHash) → `Hotel.eventId` (required) → buses/trips/locations via hotel. `EventMember(eventId,userId,hotelId?)` registers attendees/coordinators per event (attendee hotel lives here; `User.hotelId` removed). Staff (Owner/Admin) aren't members and can access every event. `Session.eventId` = selected event; `validateSession` re-checks membership + active event for non-staff on every request and returns `user.eventId/eventName/hotelId`. Every service scopes by `eventOf(actor)`; cross-event IDs behave as not found. `Hotel` unique `(eventId, coordinatorId)`. `EventConfig.eventName` removed (event name lives on Event).
-- **Auth (Phase 8):** see SECURITY.md › Authentication. PIN = scrypt; setup code = SHA-256, 7 days, single use, issued via `issueSetupCode` (clears PIN, revokes sessions); lockout 5 → 15 min; rate limits 10/15 min per phone. Attendees: phone + event (+ event code). `canResetPin`: Owner→Admin/Coordinator, Admin→Coordinator; Owner via CLI `--reset-pin`.
+- **Phase 8 model:** `Event` (name, dates, isActive) → `Hotel.eventId` (required) → buses/trips/locations via hotel. `EventMember(eventId,userId,hotelId?)` registers attendees/coordinators per event (attendee hotel lives here; `User.hotelId` removed). Staff (Owner/Admin) aren't members and can access every event. `Session.eventId` = selected event; `validateSession` re-checks membership + active event for non-staff on every request and returns `user.eventId/eventName/hotelId`. Every service scopes by `eventOf(actor)`; cross-event IDs behave as not found. `Hotel` unique `(eventId, coordinatorId)`. `EventConfig.eventName` removed (event name lives on Event).
+- **Auth (Phase 8):** see SECURITY.md › Authentication. PIN = scrypt; setup code = SHA-256, 7 days, single use, issued via `issueSetupCode` (clears PIN, revokes sessions); lockout 5 → 15 min; rate limits 10/15 min per phone. Attendees: phone + event only (owner decision 2026-10-19: no event code). `canResetPin`: Owner→Admin/Coordinator, Admin→Coordinator; Owner via CLI `--reset-pin`.
 
 - Full details: `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `docs/SECURITY.md` (has the permission matrix).
 - **Entities:** User, Hotel, Bus, BusStop, Trip, BusLocation (latest per bus), LocationPoint (sampled history), BusStatusEvent, Session, RateLimitBucket, AuditLog, EventConfig (single row). No schema changes in Phase 2.
@@ -183,7 +183,7 @@ AGENTS.md                       Next.js agent rules (auto-maintained block) + po
 - [ ] **Release** (next): review PR #7 + Phase 8 together; owner creates Neon DB + Vercel env vars (no Twilio/Pusher); merge combined changes; first production deploy (migrations run automatically); `owner:create` → setup code → PIN; create events; smoke test (DEPLOYMENT.md §5)
 - [ ] Real-device GPS test (Android Chrome, iPhone Safari) + laptop fallback test on the HTTPS deployment
 - [ ] Staging k6 run (OPERATIONS.md) and decide hosting plan vs. load (DEPLOYMENT.md › Cost review)
-- [ ] Optional: per-attendee codes if impersonation risk is unacceptable; longer attendee poll interval if free-tier limits bite
+- [ ] Optional: longer attendee poll interval if free-tier limits bite
 
 ## 7. Current Development State
 
@@ -222,7 +222,7 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 
 ## 10. Known Issues and Risks
 
-- **Residual security risks (accepted, see SECURITY.md):** 6-digit PIN strength (mitigated by lockout/rate limits/weak-PIN rejection); attendee impersonation by phone number (+ event code if set) — read-only, own-hotel data only; setup codes must be handed over privately.
+- **Residual security risks (accepted, see SECURITY.md):** 6-digit PIN strength (mitigated by lockout/rate limits/weak-PIN rejection); attendee impersonation by phone number + event (owner accepted; no event code) — read-only, own-hotel data only; setup codes must be handed over privately.
 - **Cost assumptions unverified:** Vercel Hobby non-commercial terms and invocation limits; Neon free compute; polling load at 2,000 viewers likely exceeds free tiers (DEPLOYMENT.md › Cost review). Not measured (no staging/k6 yet).
 - **Release hazard:** merging PR #7 (Phase 7) to `main` **without** Phase 8 would deploy code that still requires Twilio for sign-in. Release Phase 7 and 8 together.
 - **Location audit:** server ingest/validation/ordering/event scoping verified by tests; client flow verified with a simulated GPS shim (Phase 5) and the permission-denied path; HTTPS check, >100 m accuracy warning and signed-out handling added but **not exercised on real hardware**. Background tracking on mobile browsers is not reliable (documented).
@@ -296,6 +296,8 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
   - Rewritten: `services/{auth,people}.ts`, `components/auth/LoginForm.tsx`, `hooks/useBusLive.ts` (polling only), `prisma/seed.ts` (two events, demo PIN 246810), `tests/integration/{auth,helpers}.ts`, README, `.env.example`.
   - Changed: session (event context), policies (`canResetPin`, event actions), scope/hotels/buses/transport/trips/dashboard/settings (event scoping), create-owner (setup code, `--reset-pin`), loadtest-seed, TripControls/useGeolocationSharing (HTTPS, accuracy, signed-out), CSP (no Pusher), CI env, SECURITY/ARCHITECTURE/DATABASE/DEPLOYMENT/OPERATIONS.
   - Removed: `src/lib/auth/otp/*`, `api/auth/otp/*`, `src/lib/realtime/publisher.ts`, `api/realtime/auth`, `tests/unit/realtime.test.ts`, deps `pusher`, `pusher-js`; env `OTP_PROVIDER`, `TWILIO_*`, `PUSHER_*`.
+
+- **2026-10-19 — Attendee event code removed** (owner request): dropped `Event.attendeeCodeHash` (new migration `20261019070000_drop_event_attendee_code`), the login field, event form fields, service logic, tests and docs. Attendees sign in with phone number + event only.
 
 ## 12. Instructions for the Next AI
 

@@ -88,8 +88,8 @@ describe.skipIf(!hasTestDb)("event management and switching", () => {
     const owner = await staff("OWNER");
     const coord = await createUser("COORDINATOR");
     const { id } = await events.createEvent(admin, events.eventInput.parse({ name: "New expo", startsOn: "2026-12-01", endsOn: "2026-12-03" }));
-    await events.updateEvent(admin, id, events.eventInput.parse({ name: "New expo 2026", attendeeCode: "WELCOME" }));
-    expect((await prisma.event.findUniqueOrThrow({ where: { id } })).attendeeCodeHash).toMatch(/^[0-9a-f]{64}$/);
+    await events.updateEvent(admin, id, events.eventInput.parse({ name: "New expo 2026", startsOn: "2026-12-01" }));
+    expect((await prisma.event.findUniqueOrThrow({ where: { id } })).name).toBe("New expo 2026");
     expect((await code(events.setEventActive(admin, id, false))).code).toBe("forbidden");
     await events.setEventActive(owner, id, false);
     expect((await code(events.createEvent(coord, events.eventInput.parse({ name: "X" })))).code).toBe("forbidden");

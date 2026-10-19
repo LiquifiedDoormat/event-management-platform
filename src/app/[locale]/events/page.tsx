@@ -28,7 +28,6 @@ export default async function EventsPage({ params }: PageProps<"/[locale]/events
             <span className="flex flex-wrap gap-2">
               {e.id === user.eventId && <Badge tone="ok">{t("current")}</Badge>}
               {!e.isActive && <Badge tone="danger">{tc("inactive")}</Badge>}
-              <Badge>{e.attendeeCodeHash ? t("codeRequired") : t("phoneOnly")}</Badge>
             </span>
           </ListCard>
         ))}

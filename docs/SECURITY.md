@@ -20,7 +20,7 @@
 | Staff sign-in | Owner/Admin/Coordinator: phone + 6-digit PIN (`src/server/services/auth.ts`). PINs hashed with scrypt (N=16384, r=8, p=1, 16-byte salt; `src/lib/auth/pin.ts`); never stored or logged in clear. Weak PINs (one repeated digit, straight runs) refused. |
 | First PIN / reset | Requires a **one-time setup code** (10 random characters, SHA-256 stored, 7-day expiry, single use) issued by an authorized admin (Owner → Admin/Coordinator; Admin → Coordinator) or, for Owners, by `npm run owner:create -- --reset-pin` (needs DB access). Issuing a code clears the PIN and revokes all sessions. Nobody can set a PIN for another account by knowing the phone number. |
 | Brute force | Per-account lockout: 5 wrong PINs → 15 min lock (audited). Rate limits (PostgreSQL, hashed keys): 10/15 min per phone, 60/15 min per IP for PIN and setup attempts. |
-| Attendee sign-in | Phone number registered (EventMember) for the chosen active event, plus the event's **shared attendee code** if the event has one (SHA-256 stored, compared in constant time). Rate limits: 10/15 min per phone, 120/15 min per IP. Attendee sessions are read-only by role. |
+| Attendee sign-in | Phone number registered (EventMember) for the chosen active event; no PIN or code. Rate limits: 10/15 min per phone, 120/15 min per IP. Attendee sessions are read-only by role. |
 | Enumeration | All failures return the same `invalid_credentials` (unknown number, wrong PIN, no PIN yet, wrong event for attendees). Only a correct PIN can reveal "not registered for this event". Lockout responses can reveal that a number has a privileged account after 5 failures. |
 | Event access | Session stores the selected event; `validateSession` re-checks it on every request: attendees/coordinators must still be registered and the event active; Owner/Admin may access every event. Switching events is a server action that re-checks access and never changes memberships. |
 | Sessions | 256-bit random token in cookie `__Host-session` (`session` in dev): HttpOnly, Secure (prod), SameSite=Lax. DB stores SHA-256 only. 30 days of inactivity, renewed ≤ once/day. Sign-out revokes; deactivation, phone change, role change and PIN reset revoke all sessions. |
@@ -30,7 +30,7 @@
 ### Residual risks (accepted, documented)
 
 - **6-digit PIN** = 1,000,000 combinations. Lockout + rate limits make online guessing slow (≈ 480 guesses/day per account), but a PIN is weaker than a strong password and can be shoulder-surfed. Mitigations: weak-PIN rejection, lockout alerts in the audit log, admin resets.
-- **Attendee impersonation:** anyone who knows an attendee's phone number (and the event code, if used) can view that attendee's read-only page: their hotel, its coordinator's contact, their buses and stops. They cannot change anything or see other attendees. Using an event code blocks outsiders who only have a phone number; it does not stop other attendees of the same event. Stronger protection would need per-person codes or SMS (cost).
+- **Attendee impersonation:** anyone who knows an attendee's phone number and event can view that attendee's read-only page: their name, hotel, its coordinator's contact, their buses and stops. They cannot change anything or see other attendees. Accepted by the project owner to keep attendee sign-in simple (no codes, no SMS). Stronger options if needed later: per-person codes or SMS (cost).
 - **Setup codes** are as sensitive as a temporary password until used; hand them over privately.
 
 ## Permission matrix (implemented in `src/server/policies/index.ts`)

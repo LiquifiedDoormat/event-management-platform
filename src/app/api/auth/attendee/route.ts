@@ -7,10 +7,9 @@ import { loginAttendee } from "@/server/services/auth";
 const Body = z.object({
   phone: z.string().min(1).max(32),
   eventId: z.string().min(1).max(40),
-  accessCode: z.string().max(40).optional(),
 });
 
-/** Attendee sign-in: registered phone for the event (+ event code if the event has one). */
+/** Attendee sign-in: phone number registered for the chosen event. */
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return fail("forbidden", 403);
   const body = Body.safeParse(await readJson(request));
