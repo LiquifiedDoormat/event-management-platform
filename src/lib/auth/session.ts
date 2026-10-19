@@ -30,8 +30,12 @@ export type SessionUser = {
   phone: string;
   role: Role;
   status: AccountStatus;
-  hotelId: string | null;
   preferredLocale: Locale;
+  /** Event this session is working in (null only for staff before any event exists). */
+  eventId: string | null;
+  eventName: string | null;
+  /** Attendee's hotel in the current event (from their membership); null otherwise. */
+  hotelId: string | null;
 };
 
 const userSelect = {
@@ -40,17 +44,23 @@ const userSelect = {
   phone: true,
   role: true,
   status: true,
-  hotelId: true,
   preferredLocale: true,
 } as const;
 
-export async function createSession(userId: string, userAgent?: string | null) {
+const isStaffRole = (role: Role) => role === "OWNER" || role === "ADMIN";
+
+export async function createSession(userId: string, eventId: string | null, userAgent?: string | null) {
   const token = randomToken();
   const expiresAt = new Date(Date.now() + TTL_MS);
   await prisma.session.create({
-    data: { tokenHash: sha256(token), userId, expiresAt, userAgent: userAgent?.slice(0, 300) ?? null },
+    data: { tokenHash: sha256(token), userId, eventId, expiresAt, userAgent: userAgent?.slice(0, 300) ?? null },
   });
   return { token, expiresAt };
+}
+
+/** Moves a session to another event. Callers must check access first (services/events.ts). */
+export async function setSessionEvent(sessionId: string, eventId: string) {
+  await prisma.session.update({ where: { id: sessionId }, data: { eventId } });
 }
 
 /**
@@ -63,10 +73,31 @@ export async function validateSession(
   if (!token || token.length > 100) return null;
   const session = await prisma.session.findUnique({
     where: { tokenHash: sha256(token) },
-    select: { id: true, expiresAt: true, lastUsedAt: true, revokedAt: true, user: { select: userSelect } },
+    select: {
+      id: true,
+      expiresAt: true,
+      lastUsedAt: true,
+      revokedAt: true,
+      eventId: true,
+      event: { select: { name: true, isActive: true } },
+      user: { select: userSelect },
+    },
   });
   if (!session || session.revokedAt || session.expiresAt <= new Date()) return null;
   if (session.user.status !== "ACTIVE") return null;
+
+  // Event access is re-checked on every request: attendees and coordinators
+  // must still be registered for the session's event, and it must be active.
+  let hotelId: string | null = null;
+  if (!isStaffRole(session.user.role)) {
+    if (!session.eventId || !session.event?.isActive) return null;
+    const membership = await prisma.eventMember.findUnique({
+      where: { eventId_userId: { eventId: session.eventId, userId: session.user.id } },
+      select: { hotelId: true },
+    });
+    if (!membership) return null;
+    hotelId = membership.hotelId;
+  }
 
   if (Date.now() - session.lastUsedAt.getTime() > RENEW_AFTER_MS) {
     await prisma.session.update({
@@ -74,7 +105,10 @@ export async function validateSession(
       data: { lastUsedAt: new Date(), expiresAt: new Date(Date.now() + TTL_MS) },
     });
   }
-  return { user: session.user, sessionId: session.id };
+  return {
+    user: { ...session.user, eventId: session.eventId, eventName: session.event?.name ?? null, hotelId },
+    sessionId: session.id,
+  };
 }
 
 export async function revokeSession(token: string) {

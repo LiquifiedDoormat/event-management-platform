@@ -7,11 +7,16 @@
 // Options:
 //   --allow-additional   create another Owner even if one already exists
 //   --promote-existing   promote an existing account with this phone to Owner
+//   --reset-pin          issue a new setup code for an existing Owner (forgotten PIN)
+//
+// Prints a one-time setup code; the Owner uses it on the sign-in page
+// ("Staff or coordinator" → "First time") to choose their 6-digit PIN.
 import "dotenv/config";
 import { parseArgs } from "node:util";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { maskPhone, normalizePhone } from "../src/lib/utils/phone";
+import { hashSetupCode, newSetupCode, SETUP_CODE_DAYS } from "../src/lib/auth/pin";
 
 const { values } = parseArgs({
   options: {
@@ -19,6 +24,7 @@ const { values } = parseArgs({
     name: { type: "string" },
     "allow-additional": { type: "boolean", default: false },
     "promote-existing": { type: "boolean", default: false },
+    "reset-pin": { type: "boolean", default: false },
   },
 });
 
@@ -30,12 +36,37 @@ function fail(message: string): never {
 const phone = normalizePhone(values.phone ?? "");
 const name = values.name?.trim();
 if (!phone) fail("--phone must be a valid mobile number");
-if (!name) fail("--name is required");
+if (!name && !values["reset-pin"]) fail("--name is required");
 if (!process.env.DATABASE_URL) fail("DATABASE_URL is not set");
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
+const setupCode = newSetupCode();
+const setupData = {
+  pinHash: null,
+  pinSetupCodeHash: hashSetupCode(setupCode),
+  pinSetupExpiresAt: new Date(Date.now() + SETUP_CODE_DAYS * 86_400_000),
+  failedPinAttempts: 0,
+  pinLockedUntil: null,
+};
+
+function printCode(who: string) {
+  console.log(`${who} (${maskPhone(phone!)}). One-time setup code (shown once, expires in ${SETUP_CODE_DAYS} days):\n\n    ${setupCode}\n\nSign in → "Staff or coordinator" → "First time" → enter the phone number, this code and a new 6-digit PIN.`);
+}
+
+async function resetOwnerPin() {
+  await prisma.$transaction(async (tx) => {
+    const owner = await tx.user.findFirst({ where: { phone: phone!, role: "OWNER" }, select: { id: true } });
+    if (!owner) fail(`no Owner account with ${maskPhone(phone!)}`);
+    await tx.user.update({ where: { id: owner!.id }, data: setupData });
+    await tx.session.updateMany({ where: { userId: owner!.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.auditLog.create({ data: { actorId: null, action: "owner.resetPin", entityType: "User", entityId: owner!.id, metadata: { via: "scripts/create-owner.ts" } } });
+  });
+  printCode("Owner PIN reset");
+}
+
 async function main() {
+  if (values["reset-pin"]) return resetOwnerPin();
   await prisma.$transaction(async (tx) => {
     const owners = await tx.user.count({ where: { role: "OWNER", status: "ACTIVE" } });
     if (owners > 0 && !values["allow-additional"]) {
@@ -48,12 +79,12 @@ async function main() {
       if (!values["promote-existing"]) {
         fail(`an account with ${maskPhone(phone!)} already exists (role ${existing.role}). Use --promote-existing.`);
       }
-      await tx.user.update({ where: { id: existing.id }, data: { role: "OWNER", status: "ACTIVE", name: name! } });
+      await tx.user.update({ where: { id: existing.id }, data: { role: "OWNER", status: "ACTIVE", name: name!, ...setupData } });
       // Force a fresh sign-in so the new role is picked up cleanly.
       await tx.session.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } });
       userId = existing.id;
     } else {
-      userId = (await tx.user.create({ data: { phone: phone!, name: name!, role: "OWNER" }, select: { id: true } })).id;
+      userId = (await tx.user.create({ data: { phone: phone!, name: name!, role: "OWNER", ...setupData }, select: { id: true } })).id;
     }
 
     await tx.auditLog.create({
@@ -65,7 +96,7 @@ async function main() {
         metadata: { via: "scripts/create-owner.ts" },
       },
     });
-    console.log(`Owner ready: ${name} (${maskPhone(phone!)}). Sign in with this number using the OTP flow.`);
+    printCode(`Owner ready: ${name}`);
   });
 }
 

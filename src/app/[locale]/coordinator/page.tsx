@@ -16,13 +16,20 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
     getTranslations("trip"),
     getTranslations("busStatus"),
     getCoordinatorOverview(user),
-    activeTripsFor(user.id),
+    activeTripsFor(user),
   ]);
   const active = trips[0];
 
   return (
     <section className="flex flex-col gap-5">
       <h1 className="text-3xl font-bold">{t("welcome", { name: user.name })}</h1>
+      <Link
+        href="/coordinator/people"
+        className="min-h-14 inline-flex items-center rounded-lg border-2 border-brand px-4 text-lg font-semibold text-brand"
+      >
+        <span aria-hidden="true">👥&nbsp;</span>
+        {t("myAttendees")}
+      </Link>
 
       {active && (
         <Section title={tt("activeTrip")}>

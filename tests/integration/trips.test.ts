@@ -1,20 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
-import { setRealtimeForTests, type RealtimePublisher } from "@/lib/realtime/publisher";
-import type { BusLiveSnapshot } from "@/lib/realtime/types";
 import { AppError } from "@/server/errors";
 import { getLiveBus } from "@/server/services/transport";
 import { changeStatus, endTrip, recordLocation, setSharing, startTrip } from "@/server/services/trips";
-import { createTwoHotels, createUser, hasTestDb, resetDb } from "./helpers";
+import { createTwoHotels, hasTestDb, resetDb, staff } from "./helpers";
 
-const published: BusLiveSnapshot[] = [];
-const fakeRealtime: RealtimePublisher = {
-  enabled: true,
-  async publishBus(s) {
-    published.push(s);
-  },
-  authorize: () => ({}),
-};
 
 async function rejects(p: Promise<unknown>, code: AppError["code"], reason?: string) {
   const err = await p.then(() => null, (e: unknown) => e);
@@ -32,20 +22,14 @@ const reading = (tripId: string, offsetMs = 0, lat = 12.97) => ({
 });
 
 describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
-  beforeEach(async () => {
-    await resetDb();
-    published.length = 0;
-    setRealtimeForTests(fakeRealtime);
-  });
-  afterEach(() => setRealtimeForTests(undefined));
+  beforeEach(resetDb);
 
-  it("lets a coordinator start a trip on their bus, then publishes it", async () => {
+  it("lets a coordinator start a trip on their bus", async () => {
     const { coordA, busA } = await createTwoHotels();
     const { id } = await startTrip(coordA, busA.id);
     const trip = await prisma.trip.findUniqueOrThrow({ where: { id } });
     expect(trip).toMatchObject({ coordinatorId: coordA.id, status: "BOARDING", statusVersion: 0, endedAt: null });
     expect(await prisma.busStatusEvent.count({ where: { tripId: id } })).toBe(1);
-    expect(published.at(-1)).toMatchObject({ busId: busA.id, trip: { status: "BOARDING" }, location: null });
   });
 
   it("refuses unrelated coordinators, attendees and a second active trip", async () => {
@@ -53,7 +37,7 @@ describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
     await rejects(startTrip(coordB, busA.id), "forbidden");
     await rejects(startTrip(guestA, busA.id), "forbidden");
     await startTrip(coordA, busA.id);
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     await rejects(startTrip(admin, busA.id), "conflict", "busOnTrip");
     // coordA also designated to busB → still only one trip at a time.
     await prisma.bus.update({ where: { id: busB.id }, data: { coordinatorId: coordA.id } });
@@ -62,7 +46,7 @@ describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
 
   it("lets staff start a trip for the bus's designated coordinator", async () => {
     const { coordB, busB } = await createTwoHotels();
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { id } = await startTrip(admin, busB.id);
     expect((await prisma.trip.findUniqueOrThrow({ where: { id } })).coordinatorId).toBe(coordB.id);
   });
@@ -78,12 +62,11 @@ describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
     // Same status again is a harmless no-op (double tap).
     expect(await changeStatus(coordA, id, "TO_STOP", 1)).toEqual({ version: 1 });
     expect(await prisma.busStatusEvent.count({ where: { tripId: id } })).toBe(2);
-    expect(published.at(-1)?.trip?.status).toBe("TO_STOP");
   });
 
   it("lets staff correct a status, with an audit entry", async () => {
     const { coordA, busA } = await createTwoHotels();
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { id } = await startTrip(coordA, busA.id);
     await changeStatus(admin, id, "AT_HOTEL", 0);
     expect(await prisma.auditLog.count({ where: { action: "trip.correctStatus", entityId: id } })).toBe(1);
@@ -107,7 +90,6 @@ describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
     });
 
     expect((await prisma.trip.findUniqueOrThrow({ where: { id } })).sharingLocation).toBe(true);
-    expect(published.at(-1)?.location?.latitude).toBe(12.97);
   });
 
   it("rejects readings from the future and ignores very old ones", async () => {
@@ -148,7 +130,6 @@ describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
     const { coordA, busA, guestA } = await createTwoHotels();
     const { id } = await startTrip(coordA, busA.id);
     await setSharing(coordA, id, true);
-    expect(published.at(-1)?.trip?.sharingLocation).toBe(true);
     await rejects(setSharing(guestA, id, false), "forbidden");
     await rejects(endTrip(guestA, id), "forbidden");
   });

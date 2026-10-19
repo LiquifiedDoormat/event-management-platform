@@ -3,6 +3,7 @@
 import { createContext, startTransition, useActionState, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { idle, type ActionState } from "@/features/admin/action-state";
+import { Link } from "@/i18n/navigation";
 
 type Action = (state: ActionState, form: FormData) => Promise<ActionState>;
 
@@ -82,6 +83,18 @@ export function ActionForm({
           {state.status === "ok" ? "✓ " : "⚠ "}
           {t(state.message)}
         </p>
+      )}
+      {state.secret && (
+        <div role="status" className="w-full rounded-lg border-2 border-brand bg-blue-50 p-4">
+          <p className="font-semibold">{t("pin.codeIntro")}</p>
+          <p className="my-2 select-all font-mono text-3xl font-bold tracking-widest">{state.secret.code}</p>
+          <p>{t("pin.codeHandover")}</p>
+          {state.secret.href && (
+            <Link href={state.secret.href} className="mt-2 inline-flex min-h-11 items-center font-semibold text-brand underline">
+              {t("pin.openPerson")} ▶
+            </Link>
+          )}
+        </div>
       )}
     </form>
   );

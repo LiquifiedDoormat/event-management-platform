@@ -4,17 +4,17 @@ import type { SessionUser } from "@/lib/auth/session";
 import { canViewBus, isStaff, type Actor } from "@/server/policies";
 import { loadScope } from "@/server/policies/scope";
 import { notFound } from "@/server/errors";
-import { realtime } from "@/lib/realtime/publisher";
+import { eventOf } from "./context";
 import type { BusLiveSnapshot } from "@/lib/realtime/types";
 import type { BusStatus } from "@/generated/prisma/enums";
 
-const DEFAULT_CONFIG = { eventName: "", staleLocationSeconds: 120, historySampleSeconds: 30 };
+const DEFAULT_CONFIG = { staleLocationSeconds: 120, historySampleSeconds: 30 };
 
-/** Event-wide display settings (single row; falls back to defaults if not created yet). */
+/** Platform-wide tracking settings (single row; falls back to defaults if not created yet). */
 export async function getEventSettings() {
   const config = await prisma.eventConfig.findUnique({
     where: { id: 1 },
-    select: { eventName: true, staleLocationSeconds: true, historySampleSeconds: true },
+    select: { staleLocationSeconds: true, historySampleSeconds: true },
   });
   return config ?? DEFAULT_CONFIG;
 }
@@ -29,7 +29,7 @@ export async function getCustomerHome(user: SessionUser) {
     getEventSettings(),
     user.hotelId
       ? prisma.hotel.findFirst({
-          where: { id: user.hotelId, isActive: true },
+          where: { id: user.hotelId, isActive: true, eventId: eventOf(user) },
           select: {
             name: true,
             address: true,
@@ -60,8 +60,8 @@ export async function getCustomerHome(user: SessionUser) {
  * coordinators with that hotel in scope. Anything else is reported as not found.
  */
 export async function getTrackedBus(actor: Actor, busId: string) {
-  const bus = await prisma.bus.findUnique({
-    where: { id: busId },
+  const bus = await prisma.bus.findFirst({
+    where: { id: busId, hotel: { eventId: eventOf(actor) } },
     select: {
       id: true,
       label: true,
@@ -120,7 +120,8 @@ export async function getBusSnapshot(busId: string): Promise<BusLiveSnapshot> {
 
 /** Throws not_found unless `actor` may view this bus (same rule as the tracking page). */
 export async function assertCanViewBus(actor: Actor, busId: string) {
-  const bus = await prisma.bus.findUnique({ where: { id: busId }, select: { hotelId: true, isActive: true } });
+  // Only buses of the actor's current event exist from their point of view.
+  const bus = await prisma.bus.findFirst({ where: { id: busId, hotel: { eventId: eventOf(actor) } }, select: { hotelId: true, isActive: true } });
   if (!bus || (!bus.isActive && !isStaff(actor))) throw notFound();
   if (!canViewBus(actor, await loadScope(actor), bus)) throw notFound();
 }
@@ -129,15 +130,4 @@ export async function assertCanViewBus(actor: Actor, busId: string) {
 export async function getLiveBus(actor: Actor, busId: string) {
   await assertCanViewBus(actor, busId);
   return getBusSnapshot(busId);
-}
-
-/** Pushes the bus's current state to subscribers. Never throws. */
-export async function publishBus(busId: string) {
-  const rt = realtime();
-  if (!rt.enabled) return;
-  try {
-    await rt.publishBus(await getBusSnapshot(busId));
-  } catch (err) {
-    console.error("[realtime] snapshot failed", (err as Error).name);
-  }
 }

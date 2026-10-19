@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { canSendLocation, canStartTrip, canViewBus, canViewHotel, canViewPerson } from "@/server/policies";
 import { loadScope } from "@/server/policies/scope";
 import { getCustomerHome } from "@/server/services/transport";
-import { createTwoHotels, createUser, hasTestDb, resetDb } from "./helpers";
+import { createTwoHotels, createUser, hasTestDb, moveAttendee, resetDb } from "./helpers";
 
 describe.skipIf(!hasTestDb)("relationship-based authorization", () => {
   beforeEach(resetDb);
@@ -26,17 +26,17 @@ describe.skipIf(!hasTestDb)("relationship-based authorization", () => {
 
   it("switches a customer's access immediately when their hotel changes", async () => {
     const { guestA, hotelA, hotelB, busB } = await createTwoHotels();
-    const moved = await prisma.user.update({ where: { id: guestA.id }, data: { hotelId: hotelB.id } });
+    const moved = await moveAttendee(guestA, hotelB.id);
     const scope = await loadScope(moved);
     expect(canViewHotel(moved, scope, hotelA.id)).toBe(false);
     expect(canViewHotel(moved, scope, hotelB.id)).toBe(true);
     expect(canViewBus(moved, scope, busB)).toBe(true);
-    expect((await getCustomerHome({ ...moved, status: "ACTIVE" })).hotel?.name).toBe("Hotel B");
+    expect((await getCustomerHome({ ...moved, eventName: null })).hotel?.name).toBe("Hotel B");
   });
 
   it("customer overview exposes only the coordinator's name and phone", async () => {
     const { guestA, coordA } = await createTwoHotels();
-    const { hotel } = await getCustomerHome(guestA);
+    const { hotel } = await getCustomerHome({ ...guestA, eventName: null });
     expect(hotel?.coordinator).toEqual({ name: coordA.name, phone: coordA.phone });
     expect(hotel?.buses.map((b) => b.label)).toEqual(["Bus A"]);
   });

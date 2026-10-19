@@ -39,7 +39,7 @@ export default async function HotelsPage({ params, searchParams }: PageProps<"/[
                   <Badge tone="warn">⚠ {t("noCoordinator")}</Badge>
                 )}
               </span>
-              <span>{t("counts", { buses: h._count.buses, attendees: h._count.attendees })}</span>
+              <span>{t("counts", { buses: h._count.buses, attendees: h._count.members })}</span>
               {!h.isActive && <Badge tone="danger">{td("inactive")}</Badge>}
             </ListCard>
           ))}

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
 import { AppError } from "@/server/errors";
 import { getCustomerHome, getTrackedBus } from "@/server/services/transport";
-import { createTwoHotels, createUser, hasTestDb, resetDb } from "./helpers";
+import { createTwoHotels, createUser, hasTestDb, moveAttendee, resetDb, staff } from "./helpers";
 
 async function denied(p: Promise<unknown>) {
   const err = await p.then(() => null, (e: unknown) => e);
@@ -10,7 +10,7 @@ async function denied(p: Promise<unknown>) {
   expect((err as AppError).code).toBe("not_found");
 }
 
-const asSession = <T extends { status: string }>(u: T) => ({ ...u, status: "ACTIVE" as const });
+const asSession = <T extends { status: string }>(u: T) => ({ ...u, status: "ACTIVE" as const, eventName: null });
 
 describe.skipIf(!hasTestDb)("attendee transport views", () => {
   beforeEach(resetDb);
@@ -38,7 +38,7 @@ describe.skipIf(!hasTestDb)("attendee transport views", () => {
 
   it("follows a hotel reassignment immediately", async () => {
     const { guestA, busA, busB, hotelB } = await createTwoHotels();
-    const moved = await prisma.user.update({ where: { id: guestA.id }, data: { hotelId: hotelB.id } });
+    const moved = await moveAttendee(guestA, hotelB.id);
     await denied(getTrackedBus(moved, busA.id));
     expect((await getTrackedBus(moved, busB.id)).bus.id).toBe(busB.id);
   });
@@ -47,7 +47,7 @@ describe.skipIf(!hasTestDb)("attendee transport views", () => {
     const { guestA, busA } = await createTwoHotels();
     await prisma.bus.update({ where: { id: busA.id }, data: { isActive: false } });
     await denied(getTrackedBus(guestA, busA.id));
-    const admin = await createUser("ADMIN");
+    const admin = await staff();
     expect((await getTrackedBus(admin, busA.id)).bus.isActive).toBe(false);
     expect((await getCustomerHome(asSession(guestA))).hotel?.buses).toEqual([]);
   });

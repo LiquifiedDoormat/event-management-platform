@@ -83,8 +83,17 @@ export async function moveStopAction(_: ActionState, form: FormData) {
 
 // ---- People ---------------------------------------------------------------
 
+/** Admins/Coordinators get a one-time setup code, shown once here instead of redirecting. */
 export async function createPersonAction(_: ActionState, form: FormData) {
-  return run(form, async (u, d) => `/people/${(await people.createPerson(u, personCreateInput.parse(d))).id}`);
+  return run(form, async (u, d) => {
+    const created = await people.createPerson(u, personCreateInput.parse(d));
+    if (created.setupCode) return { secret: { code: created.setupCode, href: `/people/${created.id}` } };
+    return `/people/${created.id}`;
+  });
+}
+
+export async function resetPinAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => ({ secret: { code: await people.resetPin(u, id.parse(d.id)) } }));
 }
 
 export async function updatePersonAction(_: ActionState, form: FormData) {

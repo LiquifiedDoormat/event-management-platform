@@ -63,6 +63,8 @@ const KNOWN: Record<string, true> = {
   invalidPhone: true,
   coordsPair: true,
   invalid: true,
+  endBeforeStart: true,
+  tooShort: true,
 };
 
 export const listQuery = z.object({

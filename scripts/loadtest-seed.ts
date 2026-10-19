@@ -39,6 +39,7 @@ if (process.env.NODE_ENV === "production" || !(isLocal || /(staging|load|test)/i
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
 // Load-test accounts use the +91 77777 xxxxx range so they're easy to find and delete.
 const PREFIX = "+9177777";
+const LT_EVENT = "evt_loadtest";
 const phone = (n: number) => `${PREFIX}${String(n).padStart(5, "0")}`;
 const token = () => randomBytes(32).toString("base64url");
 const sha256 = (v: string) => createHash("sha256").update(v).digest("hex");
@@ -51,8 +52,10 @@ async function cleanup() {
   const hotelIds = hotels.map((h) => h.id);
   await prisma.trip.deleteMany({ where: { coordinatorId: { in: ids } } });
   await prisma.bus.deleteMany({ where: { hotelId: { in: hotelIds } } });
-  await prisma.user.updateMany({ where: { id: { in: ids } }, data: { hotelId: null } });
+  await prisma.eventMember.deleteMany({ where: { eventId: LT_EVENT } });
+  await prisma.session.deleteMany({ where: { eventId: LT_EVENT } });
   await prisma.hotel.deleteMany({ where: { id: { in: hotelIds } } });
+  await prisma.event.deleteMany({ where: { id: LT_EVENT } });
   await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
   await prisma.user.deleteMany({ where: { id: { in: ids } } });
   console.log(`Removed ${ids.length} load-test users and ${hotelIds.length} hotels.`);
@@ -71,9 +74,10 @@ async function seed() {
     coordinators: { token: string; tripId: string; busId: string }[];
   } = { admin: "", customers: [], coordinators: [] };
 
+  await prisma.event.create({ data: { id: LT_EVENT, name: "Load test event" } });
   const sessionFor = async (userId: string) => {
     const t = token();
-    await prisma.session.create({ data: { tokenHash: sha256(t), userId, expiresAt: days(2) } });
+    await prisma.session.create({ data: { tokenHash: sha256(t), userId, eventId: LT_EVENT, expiresAt: days(2) } });
     return t;
   };
 
@@ -84,12 +88,14 @@ async function seed() {
   const hotelIds: string[] = [];
   for (let h = 0; h < hotelCount; h++) {
     const hotel = await prisma.hotel.create({
-      data: { name: `LT Hotel ${h + 1}`, address: "Load test", latitude: 12.97 + h * 0.01, longitude: 77.59 },
+      data: { eventId: LT_EVENT, name: `LT Hotel ${h + 1}`, address: "Load test", latitude: 12.97 + h * 0.01, longitude: 77.59 },
     });
     hotelIds.push(hotel.id);
     const buses: string[] = [];
     for (let b = 0; b < busesPerHotel; b++) {
-      const coord = await prisma.user.create({ data: { phone: phone(n++), name: `LT Coordinator ${h}-${b}`, role: "COORDINATOR" } });
+      const coord = await prisma.user.create({
+        data: { phone: phone(n++), name: `LT Coordinator ${h}-${b}`, role: "COORDINATOR", memberships: { create: { eventId: LT_EVENT } } },
+      });
       const bus = await prisma.bus.create({ data: { label: `LT Bus ${h + 1}-${b + 1}`, hotelId: hotel.id, coordinatorId: coord.id } });
       await prisma.busStop.createMany({
         data: [1, 2, 3].map((s) => ({ busId: bus.id, sequence: s, name: `Stop ${s}`, latitude: 12.97 + s * 0.005, longitude: 77.6 })),
@@ -109,13 +115,12 @@ async function seed() {
       const k = start + i;
       return { phone: phone(n + k), name: `LT Attendee ${k + 1}`, role: "CUSTOMER" as const, hotelId: hotelIds[k % hotelCount] };
     });
-    await prisma.user.createMany({ data: rows });
-    const created = await prisma.user.findMany({
-      where: { phone: { in: rows.map((r) => r.phone) } },
-      select: { id: true, hotelId: true },
-    });
-    const sessions = created.map((u) => ({ token: token(), userId: u.id, hotelId: u.hotelId! }));
-    await prisma.session.createMany({ data: sessions.map((s) => ({ tokenHash: sha256(s.token), userId: s.userId, expiresAt: days(2) })) });
+    await prisma.user.createMany({ data: rows.map((r) => ({ phone: r.phone, name: r.name, role: r.role })) });
+    const created = await prisma.user.findMany({ where: { phone: { in: rows.map((r) => r.phone) } }, select: { id: true, phone: true } });
+    const hotelByPhone = new Map(rows.map((r) => [r.phone, r.hotelId]));
+    await prisma.eventMember.createMany({ data: created.map((u) => ({ eventId: LT_EVENT, userId: u.id, hotelId: hotelByPhone.get(u.phone)! })) });
+    const sessions = created.map((u) => ({ token: token(), userId: u.id, hotelId: hotelByPhone.get(u.phone)! }));
+    await prisma.session.createMany({ data: sessions.map((s) => ({ tokenHash: sha256(s.token), userId: s.userId, eventId: LT_EVENT, expiresAt: days(2) })) });
     for (const s of sessions) out.customers.push({ token: s.token, busIds: hotelBuses[hotelIds.indexOf(s.hotelId)] });
   }
 

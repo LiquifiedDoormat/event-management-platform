@@ -4,7 +4,7 @@ import { AppError } from "@/server/errors";
 import { getSettings, listAuditLog, settingsInput, updateSettings } from "@/server/services/settings";
 import * as hotels from "@/server/services/hotels";
 import { hotelInput } from "@/lib/validation/entities";
-import { createUser, hasTestDb, resetDb } from "./helpers";
+import { createUser, hasTestDb, resetDb, staff } from "./helpers";
 
 async function forbidden(p: Promise<unknown>) {
   const err = await p.then(() => null, (e: unknown) => e);
@@ -14,12 +14,11 @@ async function forbidden(p: Promise<unknown>) {
 
 describe("settings validation", () => {
   it("enforces the same bounds as the database", () => {
-    const ok = { eventName: "Expo", staleLocationSeconds: "120", locationRetentionDays: "7", historySampleSeconds: "30" };
-    expect(settingsInput.parse(ok)).toEqual({ eventName: "Expo", staleLocationSeconds: 120, locationRetentionDays: 7, historySampleSeconds: 30 });
+    const ok = { staleLocationSeconds: "120", locationRetentionDays: "7", historySampleSeconds: "30" };
+    expect(settingsInput.parse(ok)).toEqual({ staleLocationSeconds: 120, locationRetentionDays: 7, historySampleSeconds: 30 });
     expect(settingsInput.safeParse({ ...ok, staleLocationSeconds: "10" }).success).toBe(false);
     expect(settingsInput.safeParse({ ...ok, locationRetentionDays: "400" }).success).toBe(false);
     expect(settingsInput.safeParse({ ...ok, historySampleSeconds: "2.5" }).success).toBe(false);
-    expect(settingsInput.safeParse({ ...ok, eventName: " " }).success).toBe(false);
   });
 });
 
@@ -27,19 +26,19 @@ describe.skipIf(!hasTestDb)("owner settings and audit log", () => {
   beforeEach(resetDb);
 
   it("lets the owner read and change settings, recording only changed fields", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     expect((await getSettings(owner)).staleLocationSeconds).toBe(120); // defaults before the row exists
-    await updateSettings(owner, { eventName: "Expo 2026", staleLocationSeconds: 90, locationRetentionDays: 7, historySampleSeconds: 30 });
-    expect(await getSettings(owner)).toMatchObject({ eventName: "Expo 2026", staleLocationSeconds: 90 });
-    await updateSettings(owner, { eventName: "Expo 2026", staleLocationSeconds: 60, locationRetentionDays: 7, historySampleSeconds: 30 });
+    await updateSettings(owner, { staleLocationSeconds: 90, locationRetentionDays: 7, historySampleSeconds: 30 });
+    expect(await getSettings(owner)).toMatchObject({ staleLocationSeconds: 90 });
+    await updateSettings(owner, { staleLocationSeconds: 60, locationRetentionDays: 7, historySampleSeconds: 30 });
     const last = await prisma.auditLog.findFirstOrThrow({ where: { action: "config.update" }, orderBy: { createdAt: "desc" } });
     expect(last.metadata).toEqual({ staleLocationSeconds: 60 });
   });
 
   it("keeps settings and the audit log away from everyone but the owner", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const coordinator = await createUser("COORDINATOR");
-    const input = { eventName: "X", staleLocationSeconds: 120, locationRetentionDays: 7, historySampleSeconds: 30 };
+    const input = { staleLocationSeconds: 120, locationRetentionDays: 7, historySampleSeconds: 30 };
     for (const user of [admin, coordinator]) {
       await forbidden(getSettings(user));
       await forbidden(updateSettings(user, input));
@@ -48,9 +47,9 @@ describe.skipIf(!hasTestDb)("owner settings and audit log", () => {
   });
 
   it("lists the audit log newest first, with paging and an entity filter", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     for (let i = 0; i < 27; i++) await hotels.createHotel(owner, hotelInput.parse({ name: `H${i}`, address: "A" }));
-    await updateSettings(owner, { eventName: "E", staleLocationSeconds: 120, locationRetentionDays: 7, historySampleSeconds: 30 });
+    await updateSettings(owner, { staleLocationSeconds: 120, locationRetentionDays: 7, historySampleSeconds: 30 });
 
     const first = await listAuditLog(owner, {});
     expect(first.items).toHaveLength(25);
