@@ -188,10 +188,10 @@ AGENTS.md                       Next.js agent rules (auto-maintained block) + po
 ## 7. Current Development State
 
 - **Last completed task:** Phase 8 + owner follow-ups (no attendee event code; phone-first staff sign-in, first PIN chosen at sign-in, no setup codes).
-- **In progress:** nothing (awaiting owner decision on PR strategy / push).
-- **Next recommended task:** push `feat/phase-8-events-pin` and open a PR into `feat/phase-7-deploy` (stacked on PR #7) for review; then release per §6.
+- **In progress:** PR [#8](https://github.com/LiquifiedDoormat/event-management-platform/pull/8) (`feat/phase-8-events-pin` → `feat/phase-7-deploy`, stacked on PR #7) open for review, Auto-fix on. Not merged, not deployed.
+- **Next recommended task:** owner reviews PR #7 + #8; account setup (Neon + Vercel env vars); release both together per §6 only with explicit owner authorization.
 - **Check results (2026-10-19, local, dev server stopped):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 117/117 (15 files), `npm run build` ✅ (re-run after the phone-first PIN change). Migration verified on empty DB, populated dev DB and test DB (no drift). API checks against dev server: attendee/PIN sign-in per event, wrong-event refusal, cross-event 404s, coordinator list scoping — all as expected.
-- **CI:** PR #7 green; Phase 8 CI not yet run (branch not pushed).
+- **CI:** PR #7 green; PR #8 CI running (watched by Auto-fix).
 
 ## 8. Setup and Execution
 
