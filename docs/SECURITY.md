@@ -68,7 +68,15 @@ Pages have a `loading.tsx`, so responses stream: a signed-out request for a prot
 
 ## HTTP headers
 
-Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (geolocation on our own origin only), `Strict-Transport-Security`. A Content-Security-Policy will be added once the Google Maps and Pusher origins are wired in. API responses send `Cache-Control: no-store`.
+Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (geolocation on our own origin only), `Strict-Transport-Security`. API responses send `Cache-Control: no-store`.
+
+**Content-Security-Policy** (`src/proxy.ts`): a fresh nonce per page request; `script-src 'self' 'nonce-…' 'strict-dynamic'` (+ Maps loader; `'unsafe-eval'` only in development), `style-src` allows inline styles (Google Maps needs them), images/connect limited to self, Google Maps and Pusher, `object-src 'none'`, `frame-ancestors 'none'`, `form-action 'self'`, `upgrade-insecure-requests` in production. Verified in dev and in a local production build (no violations, pages hydrate). Not yet verified with live Google Maps/Pusher on a real deployment.
+
+**Same-origin check** (`isSameOrigin`): the browser's `Origin` must match the request's own host (works on preview URLs) or `APP_URL`.
+
+**Cron endpoint** `/api/cron/prune`: requires `Authorization: Bearer $CRON_SECRET` (constant-time compare); refuses with 503 when no secret is configured.
+
+**Load-test data**: `scripts/loadtest-seed.ts` creates sessions directly and refuses unless the database is local or named staging/load/test; tokens go to a git-ignored file.
 
 ## Personal data
 

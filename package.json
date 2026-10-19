@@ -25,7 +25,8 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "owner:create": "tsx scripts/create-owner.ts",
-    "ops:prune": "tsx --conditions=react-server scripts/prune.ts"
+    "ops:prune": "tsx --conditions=react-server scripts/prune.ts",
+    "vercel-build": "node scripts/vercel-build.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

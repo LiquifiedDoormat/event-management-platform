@@ -1,6 +1,6 @@
 # PROJECT_MEMORY.md — canonical AI / developer handover
 
-_Last updated: 2026-10-19 (end of Phase 6), branch `feat/phase-6-polish` (from `main` after PRs #1–#5 merged)._
+_Last updated: 2026-10-19 (Phase 7 tooling done; live deployment pending external accounts), branch `feat/phase-7-deploy` (from `main` after PRs #1–#6 merged)._
 
 Requirements: [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md) is the full, canonical project brief.
 
@@ -19,12 +19,12 @@ The repository's verified state takes precedence over this file. If they disagre
 
 ## 2. Current Project Status
 
-- **Stage:** Phase 6 (bilingual UI, accessibility, polish) complete on `feat/phase-6-polish`. Phase 7 (verification & deployment) not started.
-- **Completed:** Phases 1–5; Phase 6: Owner audit-log page (filters, paging, sign-ins hidden by default, translated action labels), Owner event settings page (bounds, audited), profile page (details + preferred language; login opens in that language), translated loading and error pages, skip link, 44 px back links, collapsible directory filters (open when active), language switch keeps filters, nav label fixes.
-- **Partially implemented:** none known.
-- **Not started:** Phase 7: deployment (Vercel + managed Postgres), real accounts (Twilio, Pusher, Google Maps), scheduled `ops:prune`, CSP header, k6 load tests, production smoke test, real-device GPS test, DEPLOYMENT.md/OPERATIONS.md.
-- **Broken/blocked:** nothing broken. Unverified with real services/devices: phone GPS, Pusher, Google Maps, Twilio.
-- **PRs:** #1–#5 merged into `main`. Phase 6 PR not yet opened.
+- **Stage:** Phase 7 (verification & deployment) — **code and tooling complete; production not yet configured.** Waiting on the project owner to create external accounts and set Vercel env vars.
+- **Completed:** Phases 1–6; Phase 7 so far: nonce-based CSP in `src/proxy.ts`, same-origin check that works on preview URLs, `vercel.json` (Mumbai region, build command, daily cron), `scripts/vercel-build.mjs` (migrations on production only), `/api/cron/prune` (CRON_SECRET), `DIRECT_DATABASE_URL` support for migrations, k6 script `tests/load/event-day.js` + `scripts/loadtest-seed.ts`, `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`.
+- **Vercel:** project `tgrj/event-management-platform` is connected to GitHub and builds previews (PR #6 preview built successfully after the prisma.config fix). No environment variables set yet → deployed pages can't sign anyone in.
+- **Not done (needs owner action):** Neon database, Vercel env vars, Twilio Verify, Pusher, Google Maps key, first production deploy + owner bootstrap, smoke test, real-phone GPS test, staging load test (k6 not installed locally).
+- **Broken/blocked:** nothing broken; live verification blocked on accounts.
+- **PRs:** #1–#6 merged into `main`. Phase 7 PR not yet opened.
 
 ## 3. Repository Structure
 
@@ -40,7 +40,7 @@ prisma.config.ts                Prisma 7 config: schema path, migrations, seed, 
 scripts/create-owner.ts         CLI-only Owner bootstrap (npm run owner:create)
 scripts/init-test-db.sql        Creates event_test DB on first Docker volume init
 docker-compose.yml              Local Postgres (password from .env)
-src/proxy.ts                    Next 16 "proxy" (was middleware): next-intl locale routing ONLY, not auth
+src/proxy.ts                    Next 16 "proxy" (was middleware): next-intl locale routing + per-request CSP nonce. Not auth.
 src/i18n/                       routing.ts, request.ts, navigation.ts (locale-aware Link/redirect/useRouter)
 src/app/[locale]/layout.tsx     html/body, fonts, header (language switcher + sign-out when signed in)
 src/app/[locale]/page.tsx       Redirects to role home or /login
@@ -82,6 +82,12 @@ src/features/run-action.ts      Shared `run()` wrapper for form Server Actions (
 src/server/services/trips.ts    startTrip, endTrip, changeStatus, setSharing, recordLocation, activeTripsFor
 src/server/services/maintenance.ts  pruneOldData (retention)
 scripts/prune.ts                npm run ops:prune
+scripts/vercel-build.mjs        Vercel build: prisma migrate deploy (production only / MIGRATE_ON_BUILD=1) + next build
+scripts/loadtest-seed.ts        Load-test users/hotels/buses/trips + session tokens → tests/load/.tokens.json (git-ignored); --cleanup
+src/app/api/cron/prune/         Vercel Cron target (Bearer CRON_SECRET)
+tests/load/event-day.js         k6 scenarios: attendees (home, track, 15 s polling), gps (coordinators), staff (search)
+vercel.json                     buildCommand, region bom1, cron 21:30 UTC daily
+docs/DEPLOYMENT.md, docs/OPERATIONS.md  Deploy/runbook/load-test docs
 src/lib/maps/config.ts          mapsApiKey (placeholder "<…>" = unset), mapId (default DEMO_MAP_ID), MapPoint type
 src/lib/transport/status.ts     STATUS_KIND, STATUS_ICON, locationFreshness(live/stale/none)
 src/server/services/transport.ts  getEventSettings, getCustomerHome, getTrackedBus, toSnapshot, getBusSnapshot, assertCanViewBus, getLiveBus, publishBus
@@ -111,7 +117,7 @@ tests/integration/              auth, authorization, create-owner, admin-service
 AGENTS.md                       Next.js agent rules (auto-maintained block) + pointer to this file
 ```
 
-Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`; scheduled prune → Vercel Cron route or external scheduler.
+
 
 ## 4. Architecture and Data Model
 
@@ -147,7 +153,7 @@ Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/
 | Relationship scoping (customer/coordinator) | Verified | Integration tests (other hotel/bus/attendee denied; hotel reassignment immediate; GPS only from trip coordinator) |
 | Owner bootstrap script | Verified | Integration tests (first owner, refuse second, --allow-additional, --promote-existing, bad input) + manual run on dev DB |
 | Role homepages | Verified (basic) | Browser (customer, en + hi), curl (owner) |
-| CI workflow | Verified (Phases 1–5) | Phase 6 run pending |
+| CI workflow | Verified (Phases 1–6) | Phase 7 run pending |
 | Attendee homepage + bus tracking page | Verified | 7 integration tests (`transport.test.ts`: own bus visible with trip/location/stops; other hotel's bus and unknown IDs → not_found; hotel reassignment immediate; inactive bus hidden from attendee, visible to admin; coordinator scope; inactive coordinator omitted; no-hotel case) + 3 unit tests (freshness, status grouping). Browser as attendee at 375px with a temporary demo trip (removed afterwards): status panel, stale-location warning, Hindi tracking page, other hotel's bus → translated 404 |
 | Google Maps rendering | **Implemented, unverified** | No API key yet; the no-key fallback path was verified in the browser |
 | Trips/status/GPS server logic | Verified | 11 integration tests (`trips.test.ts`): start permissions, one trip per bus/coordinator, staff start for designated coordinator, statusVersion conflicts, double-tap no-op, staff correction audited, GPS only from trip coordinator, out-of-order/duplicate ignored, future clock rejected, old ignored, history sampling, end trip clears live position and blocks updates, sharing permissions, live snapshot scoping |
@@ -158,34 +164,33 @@ Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/
 | Pusher live delivery | **Implemented, unverified** | No Pusher app yet |
 | Owner audit log + settings | Verified | 4 tests (`settings.test.ts`: bounds, owner-only, changed-fields audit, paging, entity filter, sign-ins hidden) + browser: invalid value shows field error and keeps input, valid save "Saved." |
 | Profile language preference | Verified (manual) | Browser: saving Hindi redirects to `/hi/profile?saved=1` with confirmation; select is properly labelled |
+| CSP + security headers | Verified (local) | curl: nonce on all 31 scripts; browser dev + local production build: no CSP violations, pages hydrate, language switch works. Not yet verified with live Maps/Pusher |
+| Same-origin check on any host | Verified | 4 unit tests (`request.test.ts`) |
+| Cron prune endpoint | Verified (local) | curl: 503 without secret, 401 wrong token, 200 runs prune |
+| Load-test tooling | Seed verified; **k6 run not yet done** | Seed created 60 attendees/6 buses/tokens on test DB and cleaned up; refused a production-like DB name. k6 not installed locally; no staging yet |
 | Accessibility/i18n polish | Verified (manual) | First Tab focuses translated skip link; language switch keeps `?role=…`; filters collapsed on phone, open with count when active; en/hi keys match (344 each); all 28 audit actions labelled |
 | Hotel/bus/stop/person services + policies | Verified | 23 integration tests (`admin-services.test.ts`): CRUD, owner-only actions denied to admins, customers/coordinators denied, coordinator move, deactivation guards, duplicate phone/registration, stops ordering, pagination + search, session revocation |
 | Admin UI (directories, detail pages, forms) | Verified (manual) | Browser as Owner at 375px: dashboard, hotels list, hotel detail, validation errors keep input + show field messages, successful save, add stop (form resets), Hindi people directory. curl: Admin sees edit/stop controls but no Owner-only buttons; Owner sees all; customer redirected from staff pages |
 
 ## 6. Outstanding Tasks (prioritized)
 
-- [x] Phase 1 — Foundation
-- [x] Phase 2 — Auth & authorization (Twilio live test pending)
-- [x] Phase 3 — Core administration
-- [x] Phase 4 — Customer experience (Maps live test pending)
-- [x] Phase 5 — Trips, status and live GPS (real-device GPS + Pusher live tests pending)
-- [x] Phase 6 — Bilingual UI and accessibility
-- [ ] **Phase 7 — Verification and deployment** (next)
-  - [ ] Choose + create managed Postgres (e.g. Neon/Supabase, region ap-south-1) and Vercel project; set env vars; `prisma migrate deploy`; `owner:create`
-  - [ ] Create Twilio Verify, Pusher, Google Maps accounts/keys (owner action) and verify each live
-  - [ ] Real-device GPS test (Android Chrome + iPhone Safari) on the HTTPS deployment
-  - [ ] Scheduled `ops:prune` (Vercel Cron → protected route, or GitHub Actions schedule)
-  - [ ] Content-Security-Policy header (Maps, Pusher, fonts)
-  - [ ] k6 load-test scripts (`tests/load/`) + run against a staging deployment; record results
-  - [ ] `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`; production smoke test
+- [x] Phases 1–6
+- [ ] **Phase 7 — Verification and deployment** (in progress)
+  - [x] CSP, preview-safe origin check, vercel.json, safe migrations on build, cron prune, DIRECT_DATABASE_URL, load-test scripts, DEPLOYMENT.md, OPERATIONS.md
+  - [ ] Owner: create Neon project (Mumbai) + `preview` branch; set Vercel env vars per DEPLOYMENT.md §2 (blocked on owner)
+  - [ ] Owner: Twilio Verify service, Pusher app (ap2), Google Maps key restricted to Vercel domains (blocked on owner)
+  - [ ] First production deploy; `owner:create` against production; smoke test (DEPLOYMENT.md §5)
+  - [ ] Real-phone GPS test (Android Chrome + iPhone Safari) on HTTPS
+  - [ ] Staging deployment + k6 run; record results in OPERATIONS.md and here
+  - [ ] Verify CSP with live Maps + Pusher (watch console for violations; adjust `src/proxy.ts`)
 
 ## 7. Current Development State
 
-- **Last completed task:** Phase 6 (branch `feat/phase-6-polish`).
-- **In progress:** nothing.
-- **Next recommended task:** Phase 7 — deployment and live verification. Needs the project owner to create accounts (Vercel, managed Postgres, Twilio, Pusher, Google Cloud) and share access/env values securely (never in chat or Git).
+- **Last completed task:** Phase 7 tooling (branch `feat/phase-7-deploy`).
+- **In progress:** waiting for the owner to create external accounts (see §6).
+- **Next recommended task:** walk the owner through DEPLOYMENT.md §1–2 (Neon + Vercel env vars), then Twilio/Pusher/Maps; then first production deploy, owner bootstrap, smoke test, real-phone GPS test.
 - **Incomplete changes:** none.
-- **Check results (2026-10-19, local, dev server stopped):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 107/107 (13 files), `npm run build` ✅.
+- **Check results (2026-10-19, local):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 111/111 (14 files), `npm run build` ✅ (also `next start` production smoke in browser).
 
 ## 8. Setup and Execution
 
@@ -207,7 +212,7 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 
 | Service | Status |
 | --- | --- |
-| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#5 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
+| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#6 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
 | PostgreSQL | Local Docker only. Managed provider not chosen/created. |
 | Phone OTP | `dev` provider locally. Twilio Verify implemented; **account not created, untested**. Env: `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Setup steps + pricing notes in README. |
 | Realtime (Pusher Channels) | Integrated (`PUSHER_APP_ID`, `PUSHER_SECRET`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`); **no app yet, untested**. Without it the app polls every 15 s. Setup + cost notes in README › Live updates. |
@@ -232,6 +237,7 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 - npm 12 (local) blocks dependency install scripts by default (`npm install-scripts ls` lists prisma, esbuild, @swc/core, unrs-resolver, …). The app builds and runs without them; CI uses Node 22/npm 10, which runs them. Approve with `npm install-scripts approve <pkg>` only if something breaks.
 - `.env` copied from `.env.example` contains `<…>` placeholders for Maps keys; `src/lib/maps/config.ts` treats those as unset.
 - **Dev server reload loop:** running `next build` or `next typegen` (part of `npm run typecheck`/`check`) while `npm run dev` is running corrupted the dev cache once, causing endless page reloads. Fix: stop dev, `rm -rf .next`, restart. Prefer stopping the dev server before `npm run check`/`build`. Newly added nested API route folders may also need a dev-server restart.
+- `upgrade-insecure-requests` is only sent in production. Local `next start` over HTTP still worked in Chrome (localhost is treated as secure).
 - **Vercel is connected to the repo** (project `event-management-platform`, team `tgrj`); it builds a preview for each PR. The first preview (PR #6) failed because `prisma.config.ts` used prisma's `env("DATABASE_URL")`, which throws during `npm install` → `prisma generate` when the variable is unset. Fixed by reading `process.env.DATABASE_URL ?? ""`; install and `next build` now succeed with no env vars. Deployed pages still need the env vars (Phase 7) — and `OTP_PROVIDER=dev` is refused in production builds, so previews need Twilio (or a preview-only plan) before anyone can sign in.
 - After editing a `"use server"` file, the running dev server once served a stale module (an action was `undefined` → page error). Restarting the dev server with a clean `.next` fixed it.
 - Protected pages now return HTTP 200 with an in-page redirect when signed out (because of `loading.tsx` streaming); no data is leaked (see SECURITY.md). Tests/tools should not expect a 307 for pages.
@@ -276,10 +282,15 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
   - Changed: layout (skip link, `<main id="main">`, profile link, LanguageSwitcher in Suspense), `LanguageSwitcher` (keeps query; `LanguageSwitcherWithQuery`), `Directory.SearchForm` (collapsible filters, `activeFilters`), directory pages (filter counts), owner home (tool links), back links → `BackLink`, `admin/actions.ts` (`updateSettingsAction`), OTP verify returns `locale` and LoginForm navigates in it, messages en/hi (`settings`, `audit`, `profile`, error/loading/skip strings; soft hyphen in en `nav.coordinators`), README, SECURITY, ARCHITECTURE.
   - No schema changes, no new dependencies.
 
+- **2026-10-19 — Phase 7 deployment tooling** (`feat/phase-7-deploy`):
+  - Added: `vercel.json`, `scripts/{vercel-build.mjs,loadtest-seed.ts}`, `src/app/api/cron/prune/route.ts`, `tests/load/event-day.js`, `tests/unit/request.test.ts`, `docs/{DEPLOYMENT,OPERATIONS}.md`.
+  - Changed: `src/proxy.ts` (CSP nonce + request-header override merge), `src/lib/api/request.ts` (`isSameOrigin` accepts own host), `prisma.config.ts` (`DIRECT_DATABASE_URL`), `.env.example` (`CRON_SECRET`, `DIRECT_DATABASE_URL`), `.gitignore` (load-test tokens), `package.json` (`vercel-build`), README, SECURITY.
+  - No schema changes, no new dependencies.
+
 ## 12. Instructions for the Next AI
 
 1. Read `docs/MASTER_PROMPT.md` (requirements), this file, then `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DATABASE.md`, `AGENTS.md`.
-2. Run `git status`, `git log --oneline -10`, `git branch -a`; check whether the Phase 6 PR has merged.
+2. Run `git status`, `git log --oneline -10`, `git branch -a`; check whether the Phase 7 PR has merged.
 3. Verify state: `npm install && npm run db:up && npm run db:migrate && npm run check && npm run build`.
 4. Constraints: never commit `.env` or secrets; never force-push; never reset/drop the production DB; every endpoint follows the request pattern in §4 and uses `src/server/policies`; don't mark features verified without running checks; keep `messages/en.json` and `hi.json` keys in sync; update this file after each milestone.
-5. **Next concrete action:** Phase 7 step 1: write `docs/DEPLOYMENT.md` (Vercel + managed Postgres setup, env vars, `prisma migrate deploy` in build, owner bootstrap) and add a protected cron route for `pruneOldData`; then ask the owner to create the external accounts.
+5. **Next concrete action:** confirm with the owner which accounts exist, then follow `docs/DEPLOYMENT.md` step by step (never ask for secret values in chat; they go into Vercel). After the first production deploy, run the smoke test and the real-phone GPS test and record results here.

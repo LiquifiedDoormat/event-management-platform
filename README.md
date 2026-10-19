@@ -2,7 +2,7 @@
 
 Mobile-first, English/Hindi web app for running event logistics: hotels, hotel coordinators, buses and attendees, with live bus tracking shared from the coordinator's phone.
 
-> **Status:** Phases 1–6 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management, the attendee experience with maps, and live transport: coordinators start/end trips, set the bus status with large buttons and share GPS from their phone; attendees see status and position update live; Owner audit log and event settings; profile with preferred language; accessibility and mobile polish. Real-phone GPS, Pusher, Google Maps and Twilio still need **live verification with real accounts/devices** (see below). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
+> **Status:** Phases 1–7 are implemented (deployment tooling ready; production not yet configured): app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management, the attendee experience with maps, and live transport: coordinators start/end trips, set the bus status with large buttons and share GPS from their phone; attendees see status and position update live; Owner audit log and event settings; profile with preferred language; accessibility and mobile polish. Real-phone GPS, Pusher, Google Maps and Twilio still need **live verification with real accounts/devices** (see below). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
 
 ## Planned features
 
@@ -128,7 +128,9 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 | `npm run check` | Lint + type-check + all tests |
 | `npm run test:unit` / `npm run test:integration` | Unit tests / integration tests (need `TEST_DATABASE_URL`) |
 | `npm run owner:create -- --phone … --name …` | Create the first Owner |
-| `npm run ops:prune` | Data-retention cleanup (run daily) |
+| `npm run ops:prune` | Data-retention cleanup (run daily; production uses Vercel Cron) |
+| `npm run vercel-build` | Vercel build: migrations (production only) + `next build` |
+| `npx tsx scripts/loadtest-seed.ts` | Load-test data + session tokens (local/staging DBs only) |
 | `npm run build` / `npm start` | Production build / serve it |
 | `npm run db:migrate` | Create/apply migrations (development) |
 | `npm run db:deploy` | Apply migrations (production/CI) |
@@ -151,6 +153,10 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 ## Security
 
 See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the server; the `dev` OTP provider is refused in production.
+
+## Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (Vercel + Neon, env vars, safe migrations, first Owner, smoke test, rollback) and [docs/OPERATIONS.md](docs/OPERATIONS.md) (monitoring, daily cleanup, event-day checklist, troubleshooting, load testing).
 
 ## More documentation
 

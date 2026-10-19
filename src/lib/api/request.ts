@@ -3,11 +3,23 @@ import { env } from "@/config/env";
 
 /**
  * CSRF defence for cookie-authenticated, state-changing route handlers (in
- * addition to SameSite=Lax cookies): the request must come from our own origin.
+ * addition to SameSite=Lax cookies): the request must come from the site that
+ * served it. The browser-set Origin is compared with the request's own host
+ * (works on every domain, including Vercel preview URLs), or with APP_URL.
+ * Neither header can be set by another site's page.
  */
 export function isSameOrigin(request: Request): boolean {
   const origin = request.headers.get("origin");
-  if (origin) return origin === new URL(env().APP_URL).origin;
+  if (origin) {
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      return false;
+    }
+    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    return originHost === host || origin === new URL(env().APP_URL).origin;
+  }
   // Browsers that omit Origin still send Fetch Metadata.
   return request.headers.get("sec-fetch-site") === "same-origin";
 }
