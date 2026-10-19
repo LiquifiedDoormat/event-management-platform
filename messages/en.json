@@ -12,7 +12,8 @@
     "updated": "Last updated",
     "created": "Created",
     "save": "Save changes",
-    "status": "Status"
+    "status": "Status",
+    "skipToContent": "Skip to main content"
   },
   "auth": {
     "title": "Sign in",
@@ -60,7 +61,10 @@
     "noCoordinator": "A coordinator has not been assigned yet.",
     "noBuses": "No buses are assigned yet.",
     "designatedHotel": "Designated hotel",
-    "assignedBuses": "Buses you accompany"
+    "assignedBuses": "Buses you accompany",
+    "ownerTools": "Owner tools",
+    "auditLog": "Audit log",
+    "eventSettings": "Event settings"
   },
   "busStatus": {
     "BOARDING": "Boarding",
@@ -93,14 +97,17 @@
       "tripEnded": "This trip has ended.",
       "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings."
     },
-    "notFoundHelp": "It may have moved, or you may not have access to it."
+    "notFoundHelp": "It may have moved, or you may not have access to it.",
+    "pageFailed": "This page could not be loaded",
+    "pageFailedHelp": "This is usually temporary. Please try again in a moment.",
+    "tryAgain": "Try again"
   },
   "nav": {
     "label": "Main menu",
     "home": "Home",
     "hotels": "Hotels",
     "buses": "Buses",
-    "coordinators": "Coordinators",
+    "coordinators": "Coord­inators",
     "people": "People"
   },
   "directory": {
@@ -115,7 +122,8 @@
     "includeInactive": "Include inactive",
     "all": "All",
     "noResults": "Nothing found. Try a different search.",
-    "inactive": "Inactive"
+    "inactive": "Inactive",
+    "filters": "Filters"
   },
   "roles": {
     "OWNER": "Owner",
@@ -312,5 +320,89 @@
     "staffTitle": "Trip",
     "correctStatus": "Correct status",
     "needsCoordinator": "Assign a coordinator to this bus before starting a trip."
+  },
+  "settings": {
+    "title": "Event settings",
+    "eventName": "Event name",
+    "eventNameHint": "Shown to attendees on their homepage.",
+    "stale": "Location counts as out of date after (seconds)",
+    "staleHint": "Between 15 and 3600. Default 120. Older bus positions are labelled \"may be out of date\".",
+    "sample": "Save route history every (seconds)",
+    "sampleHint": "Between 5 and 3600. Default 30. Only the latest position is shown to attendees.",
+    "retention": "Delete route history after (days)",
+    "retentionHint": "Between 0 and 365. Default 7. Removed by the daily cleanup job."
+  },
+  "audit": {
+    "title": "Audit log",
+    "intro": "Every important change, newest first.",
+    "entity": "Record type",
+    "system": "System",
+    "open": "Open",
+    "entities": {
+      "Hotel": "Hotel",
+      "Bus": "Bus",
+      "User": "Person",
+      "Trip": "Trip",
+      "EventConfig": "Event settings"
+    },
+    "actions": {
+      "auth": {
+        "login": "Signed in"
+      },
+      "owner": {
+        "bootstrap": "Owner account created (setup script)",
+        "promote": "Promoted to Owner (setup script)"
+      },
+      "hotel": {
+        "create": "Hotel created",
+        "update": "Hotel details changed",
+        "activate": "Hotel reactivated",
+        "deactivate": "Hotel deactivated",
+        "assignCoordinator": "Hotel coordinator changed"
+      },
+      "bus": {
+        "create": "Bus created",
+        "update": "Bus details changed",
+        "activate": "Bus reactivated",
+        "deactivate": "Bus deactivated",
+        "reassignHotel": "Bus moved to another hotel",
+        "assignCoordinator": "Bus coordinator changed",
+        "addStop": "Bus stop added",
+        "updateStop": "Bus stop changed",
+        "removeStop": "Bus stop removed",
+        "moveStop": "Bus stops reordered"
+      },
+      "person": {
+        "create": "Account created",
+        "update": "Name or phone changed",
+        "reassignHotel": "Attendee hotel changed",
+        "changeRole": "Role changed",
+        "activate": "Account reactivated",
+        "deactivate": "Account deactivated"
+      },
+      "trip": {
+        "start": "Trip started",
+        "end": "Trip ended",
+        "correctStatus": "Bus status corrected by staff"
+      },
+      "config": {
+        "update": "Event settings changed"
+      }
+    },
+    "showSignIns": "Show sign-ins"
+  },
+  "profile": {
+    "title": "My profile",
+    "details": "My details",
+    "name": "Name",
+    "phone": "Mobile number",
+    "role": "Role",
+    "hotel": "Hotel",
+    "changeDetailsHelp": "To change these details, contact your hotel coordinator or the event help desk.",
+    "language": "Language",
+    "languageLabel": "Preferred language",
+    "languageHint": "The app opens in this language when you sign in.",
+    "saveLanguage": "Save language",
+    "languageSaved": "Language saved."
   }
 }

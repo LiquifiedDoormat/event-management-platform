@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getMessages, getTranslations, setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
-import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
+import { Link } from "@/i18n/navigation";
+import { Suspense } from "react";
+import { LanguageSwitcher, LanguageSwitcherWithQuery } from "@/components/layout/LanguageSwitcher";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { StaffNav } from "@/components/layout/StaffNav";
 import { roleHome } from "@/server/services/auth";
@@ -41,19 +43,45 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
     <html lang={locale} className={`${latin.variable} ${devanagari.variable}`}>
       <body className="min-h-dvh flex flex-col">
         <NextIntlClientProvider messages={clientMessages}>
+          <SkipLink />
           <header className="border-b border-line px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <AppName />
             <div className="flex flex-wrap items-center gap-2">
-              <LanguageSwitcher />
+              <Suspense fallback={<LanguageSwitcher />}>
+                <LanguageSwitcherWithQuery />
+              </Suspense>
+              {user && <ProfileLink />}
               {user && <SignOutButton />}
             </div>
           </header>
           {user && (user.role === "OWNER" || user.role === "ADMIN") && <StaffNav home={roleHome(user.role)} />}
           {/* Bottom padding keeps content clear of the fixed mobile nav bar. */}
-          <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-6 pb-28 sm:pb-6">{children}</main>
+          <main id="main" tabIndex={-1} className="flex-1 w-full max-w-3xl mx-auto px-4 py-6 pb-28 sm:pb-6 outline-none">{children}</main>
         </NextIntlClientProvider>
       </body>
     </html>
+  );
+}
+
+async function SkipLink() {
+  const t = await getTranslations("common");
+  return (
+    <a
+      href="#main"
+      className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-brand focus:px-4 focus:py-3 focus:text-brand-ink"
+    >
+      {t("skipToContent")}
+    </a>
+  );
+}
+
+async function ProfileLink() {
+  const t = await getTranslations("profile");
+  return (
+    <Link href="/profile" className="min-h-11 px-3 inline-flex items-center rounded-md border border-line text-base font-semibold">
+      <span aria-hidden="true">👤&nbsp;</span>
+      {t("title")}
+    </Link>
   );
 }
 

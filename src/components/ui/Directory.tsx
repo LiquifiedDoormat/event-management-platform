@@ -3,8 +3,20 @@ import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 
 /** GET search form: keeps state in the URL so results can be bookmarked/shared. */
-export async function SearchForm({ q, placeholder, children }: { q?: string; placeholder: string; children?: ReactNode }) {
+export async function SearchForm({
+  q,
+  placeholder,
+  children,
+  activeFilters = 0,
+}: {
+  q?: string;
+  placeholder: string;
+  children?: ReactNode;
+  /** Number of filters currently applied; filters start open if any are. */
+  activeFilters?: number;
+}) {
   const t = await getTranslations("directory");
+  const filtersOpen = activeFilters > 0;
   return (
     <form method="get" role="search" className="flex flex-col gap-3 rounded-lg bg-gray-50 p-3">
       <label className="flex flex-col gap-1">
@@ -17,7 +29,15 @@ export async function SearchForm({ q, placeholder, children }: { q?: string; pla
           className="min-h-12 rounded-lg border-2 border-line bg-surface px-3 text-lg focus:border-brand outline-none"
         />
       </label>
-      {children && <div className="flex flex-wrap gap-3">{children}</div>}
+      {children && (
+        <details className="group" open={filtersOpen}>
+          <summary className="min-h-11 cursor-pointer list-none font-semibold text-brand">
+            <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-90 motion-reduce:transition-none">▶</span> {t("filters")}
+            {activeFilters > 0 && ` (${activeFilters})`}
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-3">{children}</div>
+        </details>
+      )}
       <div className="flex flex-wrap gap-3">
         <button type="submit" className="min-h-12 px-5 rounded-lg bg-brand text-brand-ink text-lg font-semibold">
           🔍 {t("searchButton")}

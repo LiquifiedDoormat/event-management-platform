@@ -79,7 +79,8 @@ export function LoginForm() {
       return setError(result.error);
     }
     // Keep the button disabled while navigating to prevent double submission.
-    router.replace((result.data as { redirectTo: string }).redirectTo);
+    const { redirectTo, locale } = result.data as { redirectTo: string; locale: "en" | "hi" };
+    router.replace(redirectTo, { locale });
     router.refresh();
   }
 

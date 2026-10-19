@@ -29,7 +29,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps<"/[
   return (
     <section className="flex flex-col gap-5">
       <PageHeader title={t("title")} action={assignableRoles(user).length ? { href: "/people/new", label: t("add") } : undefined} />
-      <SearchForm q={q} placeholder={t("searchPlaceholder")}>
+      <SearchForm q={q} placeholder={t("searchPlaceholder")} activeFilters={[filter.role, filter.status, filter.hotelId].filter(Boolean).length}>
         <FilterSelect name="role" label={t("role")} value={filter.role} allLabel={td("all")} options={ROLES.map((r) => ({ value: r, label: tr(r) }))} />
         <FilterSelect name="hotelId" label={t("hotel")} value={filter.hotelId} allLabel={td("all")} options={hotels.map((h) => ({ value: h.id, label: h.name }))} />
         <FilterSelect

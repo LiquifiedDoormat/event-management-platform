@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
+import { BackLink } from "@/components/ui/BackLink";
 import { requireUser } from "@/lib/auth/current-user";
 import { activeTripsFor } from "@/server/services/trips";
 import { TripControls } from "@/components/trips/TripControls";
@@ -16,9 +17,7 @@ export default async function TripPage({ params }: PageProps<"/[locale]/coordina
 
   return (
     <section className="flex flex-col gap-5">
-      <Link href="/coordinator" className="text-brand font-semibold">
-        ◀ {t("back")}
-      </Link>
+      <BackLink href="/coordinator" label={t("back")} />
       <div>
         <h1 className="text-3xl font-bold">🚌 {trip.bus.label}</h1>
         <p className="text-lg text-muted">🏨 {trip.bus.hotel.name}</p>

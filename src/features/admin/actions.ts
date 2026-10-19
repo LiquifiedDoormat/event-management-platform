@@ -18,6 +18,7 @@ import {
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
+import * as settings from "@/server/services/settings";
 import { run } from "@/features/run-action";
 import type { ActionState } from "./action-state";
 
@@ -100,4 +101,10 @@ export async function changeRoleAction(_: ActionState, form: FormData) {
 
 export async function setPersonStatusAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => people.setPersonStatus(u, id.parse(d.id), statusSchema.parse(d.status)));
+}
+
+// ---- Event settings (Owner) ------------------------------------------------
+
+export async function updateSettingsAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => settings.updateSettings(u, settings.settingsInput.parse(d)));
 }

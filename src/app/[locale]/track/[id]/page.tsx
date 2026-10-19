@@ -1,5 +1,5 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Link } from "@/i18n/navigation";
+import { BackLink } from "@/components/ui/BackLink";
 import { requireUser } from "@/lib/auth/current-user";
 import { orNotFound } from "@/lib/utils/page";
 import type { MapPoint } from "@/lib/maps/config";
@@ -30,9 +30,7 @@ export default async function TrackBusPage({ params }: PageProps<"/[locale]/trac
 
   return (
     <section className="flex flex-col gap-5">
-      <Link href={isStaff(user) ? `/buses/${bus.id}` : roleHome(user.role)} className="text-brand font-semibold">
-        ◀ {tt("back")}
-      </Link>
+      <BackLink href={isStaff(user) ? `/buses/${bus.id}` : roleHome(user.role)} label={tt("back")} />
       <div>
         <h1 className="text-3xl font-bold">🚌 {bus.label}</h1>
         <p className="text-lg text-muted">

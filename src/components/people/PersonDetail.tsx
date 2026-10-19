@@ -1,5 +1,6 @@
 import { getFormatter, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
+import { BackLink } from "@/components/ui/BackLink";
 import type { SessionUser } from "@/lib/auth/session";
 import { assignableRoles, can, canEditPerson, canSetAttendeeHotel } from "@/server/policies";
 import { getPerson } from "@/server/services/people";
@@ -30,9 +31,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
 
   return (
     <section className="flex flex-col gap-5">
-      <Link href={backHref} className="text-brand font-semibold">
-        ◀ {t("back")}
-      </Link>
+      <BackLink href={backHref} label={t("back")} />
       <PageHeader title={person.name} />
       <div className="flex flex-wrap gap-2">
         <Badge>{tr(person.role)}</Badge>

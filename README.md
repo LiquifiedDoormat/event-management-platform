@@ -2,7 +2,7 @@
 
 Mobile-first, English/Hindi web app for running event logistics: hotels, hotel coordinators, buses and attendees, with live bus tracking shared from the coordinator's phone.
 
-> **Status:** Phases 1–5 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management, the attendee experience with maps, and live transport: coordinators start/end trips, set the bus status with large buttons and share GPS from their phone; attendees see status and position update live. Real-phone GPS, Pusher, Google Maps and Twilio still need **live verification with real accounts/devices** (see below). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
+> **Status:** Phases 1–6 are done: app shell, bilingual routing, database schema, CI, phone OTP sign-in, sessions, role-based access control, Owner/Admin management, the attendee experience with maps, and live transport: coordinators start/end trips, set the bus status with large buttons and share GPS from their phone; attendees see status and position update live; Owner audit log and event settings; profile with preferred language; accessibility and mobile polish. Real-phone GPS, Pusher, Google Maps and Twilio still need **live verification with real accounts/devices** (see below). See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for exact progress.
 
 ## Planned features
 
@@ -162,4 +162,4 @@ See [docs/SECURITY.md](docs/SECURITY.md). Access control is enforced on the serv
 
 ## Current limitations
 
-GPS sharing works only while the coordinator's page is open and on screen. Without Pusher, attendee pages update every 15 s. Maps need a Google key. Bus stops are shown as numbered markers; the app doesn't draw road routes. No Owner screens yet for the audit log or event settings. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
+GPS sharing works only while the coordinator's page is open and on screen. Without Pusher, attendee pages update every 15 s. Maps need a Google key. Bus stops are shown as numbered markers; the app doesn't draw road routes. Accessibility has been checked by hand (keyboard, labels, tap targets, contrast), not with assistive-technology users. Directory search uses simple `contains` matching (fine for ~16k people; add trigram indexes if it gets slow). Live tracking (when built) works only while the coordinator keeps the page open; phones pause websites in the background.
