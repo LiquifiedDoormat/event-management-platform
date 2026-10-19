@@ -35,7 +35,7 @@
     "attendeeHelp": "Can't sign in? Ask your hotel coordinator or the event help desk to check your number.",
     "forgotPin": "Forgot your PIN? Ask an event administrator to reset it, then sign in again and choose a new one.",
     "errors": {
-      "invalid_credentials": "Those details didn't match. Check the event, your number and your PIN (or setup code), then try again.",
+      "invalid_credentials": "Those details didn't match. Check the event, your number and your PIN, then try again.",
       "no_event_access": "You're not registered for this event. Choose your event from the list, or ask the organisers.",
       "weak_pin": "That PIN is too easy to guess. Choose a different one.",
       "pin_mismatch": "The two PINs don't match.",
