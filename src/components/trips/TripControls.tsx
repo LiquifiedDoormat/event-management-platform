@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { useFormatter, useNow, useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import type { BusStatus } from "@/generated/prisma/enums";
@@ -9,6 +9,9 @@ import { useGeolocationSharing } from "@/hooks/useGeolocationSharing";
 import { changeStatusDirect, endTripDirect, setSharingDirect } from "@/features/trips/actions";
 
 const STATUSES: BusStatus[] = ["BOARDING", "TO_HOTEL", "AT_HOTEL", "TO_STOP", "AT_STOP"];
+/** Readings less precise than this are flagged (typical of laptops/Wi-Fi positioning). */
+const POOR_ACCURACY_M = 100;
+const noop = () => () => {};
 
 type Props = {
   tripId: string;
@@ -32,6 +35,8 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
   const [pending, startTransition] = useTransition();
   const goHome = () => router.replace("/coordinator");
   const { state: gps, start, stop } = useGeolocationSharing(tripId, goHome);
+  // Geolocation only works on HTTPS (or localhost). Read on the client only.
+  const secure = useSyncExternalStore(noop, () => window.isSecureContext, () => true);
 
   // Clear success messages after a few seconds so the screen stays calm.
   useEffect(() => {
@@ -131,7 +136,9 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
           {gps.phase === "denied" && `⚠ ${t("denied")}`}
           {gps.phase === "unsupported" && `⚠ ${t("unsupported")}`}
           {gps.phase === "ended" && `⚠ ${te("errors.reasons.tripEnded")}`}
+          {gps.phase === "signedOut" && `⚠ ${t("signedOut")}`}
         </p>
+        {!secure && <p className="font-semibold text-danger">⚠ {t("insecure")}</p>}
         {sharingOn && gps.lastSentAt && (
           <p>
             {t("lastSent", { ago: format.relativeTime(new Date(gps.lastSentAt), now) })}
@@ -139,6 +146,7 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
           </p>
         )}
         {sharingOn && gps.gpsUnavailable && <p className="font-semibold text-warn">⚠ {t("gpsUnavailable")}</p>}
+        {sharingOn && gps.accuracy !== null && gps.accuracy > POOR_ACCURACY_M && <p className="font-semibold text-warn">⚠ {t("poorAccuracy")}</p>}
         {sharingOn && gps.networkError && <p className="font-semibold text-warn">⚠ {t("networkRetry")}</p>}
         {gps.phase === "denied" && <p>{t("deniedHelp")}</p>}
         <button

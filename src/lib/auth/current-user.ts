@@ -6,12 +6,14 @@ import type { Role } from "@/generated/prisma/client";
 import { roleHome } from "@/server/services/auth";
 import { SESSION_COOKIE, validateSession, type SessionUser } from "./session";
 
-/** The signed-in, active user for this request, or null. Cached per request. */
-export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
+/** The signed-in user and session id for this request, or null. Cached per request. */
+export const getCurrentSession = cache(async () => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  const result = await validateSession(token);
-  return result?.user ?? null;
+  return validateSession(token);
 });
+
+/** The signed-in, active user (with current event context) for this request, or null. */
+export const getCurrentUser = cache(async (): Promise<SessionUser | null> => (await getCurrentSession())?.user ?? null);
 
 /**
  * For pages: returns the user or redirects. Unauthenticated → login; wrong role →

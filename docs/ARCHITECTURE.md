@@ -10,7 +10,6 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
                            ├─ route handlers + server actions (validated with Zod)
                            │     └─ services → policies (authorization) → Prisma
                            ├─► PostgreSQL (managed; pooled connections)
-                           └─► Pusher Channels (publish)  ──► subscribed browsers
 ```
 
 ## Layers
@@ -22,7 +21,7 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 | Services | `src/server/services/` | Business rules and transactions. |
 | Policies | `src/server/policies/` | Authorization: role + relationship checks (e.g. "is this bus on the customer's hotel?"). |
 | Data access | `src/lib/db/prisma.ts` | Single Prisma client (driver adapter `@prisma/adapter-pg`). |
-| Integrations | `src/lib/auth/otp/`, `src/lib/realtime/`, `src/lib/maps/` | Behind small interfaces so providers can be swapped. |
+| Auth & context | `src/lib/auth/{pin,session,current-user}.ts`, `src/server/services/{auth,events,context}.ts` | PIN hashing, sessions with event context, event access checks; `eventOf(actor)` scopes every query. |
 | Config | `src/config/env.ts` | Zod-validated environment variables; fails fast. |
 | i18n | `src/i18n/`, `messages/{en,hi}.json` | next-intl; locale in the URL (`/en/…`, `/hi/…`), remembered in a cookie. |
 
@@ -56,9 +55,10 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 | --- | --- | --- |
 | Framework | Next.js 16 App Router, TypeScript strict | Required stack; one deployable. `cacheComponents` is left off: almost every page is per-user and dynamic. |
 | ORM | Prisma 7 + `@prisma/adapter-pg` | Required stack; Prisma 7 uses driver adapters and `prisma.config.ts`. |
-| Phone OTP | Twilio Verify behind an `OtpProvider` interface; `dev` provider for local work | Server-side send + check, built-in OTP rate limiting, supports Indian numbers (Twilio handles DLT for Verify). MSG91 is a cheaper India-only alternative that fits the same interface. |
+| Sign-in | Phone + 6-digit PIN for Owner/Admin/Coordinator (scrypt; first PIN chosen at first sign-in); phone number + event for attendees | Zero recurring cost (no SMS/OTP provider). Trade-offs in SECURITY.md. |
+| Events | `Event` table; hotels belong to an event; `EventMember` holds attendee/coordinator registration and the attendee's hotel per event; session stores the selected event | Multiple independent events; one account per phone can attend several events. Owner/Admin access all events. |
 | Sessions | Own `Session` table; random 256-bit token in an HttpOnly, Secure, SameSite=Lax cookie; only the SHA-256 hash is stored | Persistent login, instant revocation on sign-out or deactivation, no secrets in localStorage. |
-| Realtime | Pusher Channels private channels, behind a `RealtimePublisher` interface | Managed fan-out (one publish per update regardless of viewers); private-channel auth endpoint lets the server authorize each subscription. |
+| Live updates | Polling `GET /api/buses/[id]/live` (20 s during a trip, 60 s idle, visible pages only) | No paid realtime service. Simple; cost scales with viewers × poll rate (see DEPLOYMENT.md › Cost review). |
 | Maps | Google Maps JavaScript API via `@vis.gl/react-google-maps` | Required; lazy-loaded on map pages only. |
 | Rate limiting | Fixed-window counters in PostgreSQL (`RateLimitBucket`) | No extra service needed at this scale; replaceable by Redis later. |
 
@@ -74,17 +74,15 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 ```
 Coordinator phone                         Server                                  Attendee browsers
 useGeolocationSharing ──POST /api/locations──► recordLocation()                    useBusLive (per bus)
- watchPosition + 30 s heartbeat            auth + canSendLocation + Zod            ◄── Pusher private-bus-{id} "update"
- send ≥10 s, or ≥5 s & moved ≥25 m         conditional upsert BusLocation          ◄── or GET /api/buses/{id}/live
- retry w/ backoff, Wake Lock               (only newer recordedAt wins)                 every 15 s (60 s when live)
+ watchPosition + 30 s heartbeat            auth + canSendLocation + event + Zod    ◄── GET /api/buses/{id}/live
+ send ≥10 s, or ≥5 s & moved ≥25 m         conditional upsert BusLocation               every 20 s (60 s idle)
+ retry w/ backoff, Wake Lock               (only newer recordedAt wins)
 TripControls ──Server Actions──► trips.ts   sampled LocationPoint (historySample)
- big status buttons + statusVersion         publishBus(snapshot) ──► RealtimePublisher (Pusher | disabled)
+ big status buttons + statusVersion
 ```
 
 - `src/server/services/trips.ts`: `startTrip` (one active trip per bus via partial unique index + explicit check; one per coordinator), `endTrip` (deletes the live `BusLocation`, keeps history), `changeStatus` (optimistic `statusVersion`; stale submissions rejected; `BusStatusEvent` row; staff corrections audited), `setSharing`, `recordLocation` (rejects future clocks > 2 min, ignores readings > 30 min old or out of order; 30/min per trip limit).
-- Snapshot sent to browsers (`BusLiveSnapshot`): `{busId, trip:{status,statusChangedAt,sharingLocation}|null, location:{lat,lng,accuracy,recordedAt}|null}`, ~200 bytes, one publish per change regardless of viewer count.
-- `src/lib/realtime/publisher.ts`: `RealtimePublisher` interface; Pusher implementation; disabled implementation when env is missing. Publishing failures are logged and never fail the write.
-- `/api/realtime/auth`: Pusher channel auth → `assertCanViewBus` (same rule as `/track`).
+- Snapshot polled by browsers (`BusLiveSnapshot`): `{busId, trip:{status,statusChangedAt,sharingLocation}|null, location:{lat,lng,accuracy,recordedAt}|null}`, ~200 bytes.
 - Viewers merge updates so an older location never replaces a newer one; relative times tick client-side (`useNow`).
 - `scripts/prune.ts` / `pruneOldData()`: retention for history points, sessions, rate-limit rows.
 

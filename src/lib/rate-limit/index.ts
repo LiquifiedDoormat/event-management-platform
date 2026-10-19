@@ -33,11 +33,3 @@ export async function rateLimit(key: string, limit: number, windowSeconds: numbe
 export async function resetRateLimit(key: string) {
   await prisma.rateLimitBucket.deleteMany({ where: { key: sha256(key) } });
 }
-
-/** Limits used by the auth flow. Tuned for elderly users who may mistype. */
-export const AUTH_LIMITS = {
-  otpSendPerPhone: { limit: 5, windowSeconds: 15 * 60 },
-  otpSendPerIp: { limit: 30, windowSeconds: 15 * 60 },
-  otpVerifyPerPhone: { limit: 8, windowSeconds: 15 * 60 },
-  otpVerifyPerIp: { limit: 60, windowSeconds: 15 * 60 },
-} as const;

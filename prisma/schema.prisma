@@ -46,13 +46,17 @@ model User {
   role            Role          @default(CUSTOMER)
   status          AccountStatus @default(ACTIVE)
   preferredLocale Locale        @default(en)
-  /// Attendee hotel allotment. Read on every request so reassignment applies immediately.
-  hotelId         String?
-  hotel           Hotel?        @relation("HotelAttendees", fields: [hotelId], references: [id], onDelete: Restrict)
+  /// scrypt hash of the 6-digit PIN (Owner/Admin/Coordinator only). Never the PIN itself.
+  /// Null = the person chooses a PIN at their next sign-in (new account or admin reset).
+  pinHash           String?
+  failedPinAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  coordinatedHotel Hotel?           @relation("HotelCoordinator")
+  memberships      EventMember[]
+
+  coordinatedHotels Hotel[]         @relation("HotelCoordinator")
   designatedBuses  Bus[]            @relation("BusCoordinator")
   trips            Trip[]
   statusEvents     BusStatusEvent[]
@@ -60,28 +64,64 @@ model User {
   auditLogs        AuditLog[]
 
   @@index([role, status])
-  @@index([hotelId])
   @@index([name])
+}
+
+/// An independent event. Hotels (and through them buses and trips) belong to one event.
+model Event {
+  id               String    @id @default(cuid())
+  name             String
+  startsOn         DateTime? @db.Date
+  endsOn           DateTime? @db.Date
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  hotels   Hotel[]
+  members  EventMember[]
+  sessions Session[]
+
+  @@index([isActive, name])
+}
+
+/// Registration of an attendee or coordinator for an event (staff have access to all events).
+model EventMember {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Attendee hotel allotment for this event. Read on every request so reassignment applies immediately.
+  hotelId   String?
+  hotel     Hotel?   @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@index([hotelId])
 }
 
 model Hotel {
   id            String   @id @default(cuid())
+  eventId       String
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
   name          String
   address       String
   latitude      Float?
   longitude     Float?
   notes         String?
   isActive      Boolean  @default(true)
-  /// One designated coordinator per hotel; a coordinator designates at most one hotel.
-  coordinatorId String?  @unique
+  /// One designated coordinator per hotel; a coordinator designates at most one hotel per event.
+  coordinatorId String?
   coordinator   User?    @relation("HotelCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  attendees User[] @relation("HotelAttendees")
-  buses     Bus[]
+  members EventMember[]
+  buses   Bus[]
 
-  @@index([isActive, name])
+  @@unique([eventId, coordinatorId])
+  @@index([eventId, isActive, name])
 }
 
 model Bus {
@@ -205,6 +245,9 @@ model Session {
   lastUsedAt DateTime  @default(now())
   revokedAt  DateTime?
   userAgent  String?
+  /// Event the user is currently working in; re-validated on every request.
+  eventId    String?
+  event      Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([expiresAt])
@@ -236,10 +279,9 @@ model AuditLog {
   @@index([createdAt])
 }
 
-/// Event-wide settings. Single row with id = 1.
+/// Platform-wide operational settings (all events). Single row with id = 1.
 model EventConfig {
   id                       Int      @id @default(1)
-  eventName                String   @default("Event")
   /// Locations older than this are shown as stale.
   staleLocationSeconds     Int      @default(120)
   /// Detailed GPS history older than this is deleted.

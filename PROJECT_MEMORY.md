@@ -1,6 +1,6 @@
 # PROJECT_MEMORY.md — canonical AI / developer handover
 
-_Last updated: 2026-10-19 (end of Phase 6), branch `feat/phase-6-polish` (from `main` after PRs #1–#5 merged)._
+_Last updated: 2026-10-19 (end of Phase 8), branch `feat/phase-8-events-pin` (based on `feat/phase-7-deploy`, PR #7 open and unmerged)._
 
 Requirements: [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md) is the full, canonical project brief.
 
@@ -10,21 +10,19 @@ The repository's verified state takes precedence over this file. If they disagre
 
 ## 1. Project Overview
 
-- **Purpose:** Mobile-first, bilingual (English/Hindi) event management web app for hotels, hotel coordinators, buses and attendees, with coordinator-controlled live bus GPS tracking.
-- **Account types (roles):** `OWNER` (everything incl. reassignment, roles, config), `ADMIN` (view/manage operational records, no Owner powers), `COORDINATOR` (their designated hotel + buses/trips they are assigned to; controls bus status and GPS sharing), `CUSTOMER` (attendee: own profile + own hotel, its coordinator and its buses only).
-  - The brief lists three account types; `COORDINATOR` is a separate role so coordinators get least-privilege trip control instead of Admin rights. See `docs/ARCHITECTURE.md`.
-- **Scale target:** 16,000+ registered users, 2,000+ concurrent. Not yet tested.
-- **Stack:** Next.js 16.4 (App Router, TypeScript strict, Turbopack), Tailwind CSS 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. OTP: Twilio Verify (REST, no SDK) behind `OtpProvider`. Maps: Google Maps JS API via `@vis.gl/react-google-maps` 1.10.1. Realtime: Pusher Channels (`pusher` 5.3.4 server, `pusher-js` 8.6.0 client) behind `RealtimePublisher`, with polling fallback. Planned: k6, Playwright.
-- **Package manager:** npm (commit `package-lock.json`; don't mix managers). Node ≥ 22 (developed on Node 26).
+- **Purpose:** Mobile-first, bilingual (English/Hindi) event management web app for **multiple independent events**: hotels, hotel coordinators, buses and attendees, with coordinator-shared live bus GPS.
+- **Zero-recurring-cost policy (Phase 8):** no SMS/OTP, realtime or map provider. Sign-in is built in (PIN for staff / phone number + event for attendees); live updates poll the server; maps default to "Open in Google Maps" links. Remaining possible costs: hosting, database, optional domain (see DEPLOYMENT.md › Cost review).
+- **Roles:** `OWNER` (everything, all events; only via CLI), `ADMIN` (manage operational records in any event; create/edit events; reset Coordinator PINs), `COORDINATOR` (their hotel/buses/trips in events they're registered for; attendee search), `CUSTOMER` (attendee; read-only; own hotel in the selected event).
+- **Stack:** Next.js 16.4, TypeScript strict, Tailwind 4, next-intl 4, Zod 4, Prisma 7.10 + `@prisma/adapter-pg`, PostgreSQL 17, Vitest 4. Optional Google Maps JS via `@vis.gl/react-google-maps`. **Removed in Phase 8:** Twilio (REST, no SDK), `pusher`, `pusher-js`.
+- **Package manager:** npm. Node ≥ 22 (developed on Node 26).
+- Full requirements: `docs/MASTER_PROMPT.md` (original brief, kept verbatim; Phase 8 instructions supersede its SMS-OTP/Pusher parts).
 
 ## 2. Current Project Status
 
-- **Stage:** Phase 6 (bilingual UI, accessibility, polish) complete on `feat/phase-6-polish`. Phase 7 (verification & deployment) not started.
-- **Completed:** Phases 1–5; Phase 6: Owner audit-log page (filters, paging, sign-ins hidden by default, translated action labels), Owner event settings page (bounds, audited), profile page (details + preferred language; login opens in that language), translated loading and error pages, skip link, 44 px back links, collapsible directory filters (open when active), language switch keeps filters, nav label fixes.
-- **Partially implemented:** none known.
-- **Not started:** Phase 7: deployment (Vercel + managed Postgres), real accounts (Twilio, Pusher, Google Maps), scheduled `ops:prune`, CSP header, k6 load tests, production smoke test, real-device GPS test, DEPLOYMENT.md/OPERATIONS.md.
-- **Broken/blocked:** nothing broken. Unverified with real services/devices: phone GPS, Pusher, Google Maps, Twilio.
-- **PRs:** #1–#5 merged into `main`. Phase 6 PR not yet opened.
+- **Stage:** Phase 8 implemented and verified locally on `feat/phase-8-events-pin` (2 local commits, not pushed). Phase 7 tooling is in PR #7 (open, CI green, **not merged**). Production never deployed.
+- **Completed (verified locally):** Phases 1–7; Phase 8: events + memberships + migration, PIN sign-in (first PIN chosen at sign-in)/lockout, attendee phone+event sign-in, event isolation across all services, event create/edit/deactivate + server-checked switching, coordinator attendee search, PIN reset UI, Twilio/OTP/Pusher removal, polling live updates, tracking HTTPS/accuracy/signed-out states, docs + cost review.
+- **Unverified:** real smartphone GPS; real laptop geolocation (browser pane blocks geolocation); Google Maps with a key; any deployment of Phases 7–8; k6 load test.
+- **Blocked:** deployment needs owner accounts (Neon + Vercel env vars) — Twilio and Pusher are **no longer needed**.
 
 ## 3. Repository Structure
 
@@ -40,14 +38,20 @@ prisma.config.ts                Prisma 7 config: schema path, migrations, seed, 
 scripts/create-owner.ts         CLI-only Owner bootstrap (npm run owner:create)
 scripts/init-test-db.sql        Creates event_test DB on first Docker volume init
 docker-compose.yml              Local Postgres (password from .env)
-src/proxy.ts                    Next 16 "proxy" (was middleware): next-intl locale routing ONLY, not auth
+src/proxy.ts                    Next 16 "proxy" (was middleware): next-intl locale routing + per-request CSP nonce. Not auth.
+src/lib/auth/pin.ts             hashPin/verifyPin (scrypt), isWeakPin, newSetupCode/hashSetupCode
+src/lib/api/auth-response.ts    Shared sign-in response (sets session cookie)
+src/app/api/auth/{pin,setup-pin,attendee}/  Sign-in routes (replaced auth/otp/*)
+src/server/services/{events,context}.ts  Events CRUD/switch; eventOf(actor) → session event or AppError("noEventSelected")
+src/app/[locale]/events/, events/[id]/   Event list/create/edit/deactivate (staff)
+src/app/[locale]/coordinator/people/     Coordinator attendee search
+src/components/layout/EventSwitcher.tsx  Current event + switch (server action)
+src/components/events/EventFields.tsx, src/features/events/actions.ts, src/features/admin/action-state.ts (secret display)
 src/i18n/                       routing.ts, request.ts, navigation.ts (locale-aware Link/redirect/useRouter)
 src/app/[locale]/layout.tsx     html/body, fonts, header (language switcher + sign-out when signed in)
 src/app/[locale]/page.tsx       Redirects to role home or /login
 src/app/[locale]/login/         Login page (server) → components/auth/LoginForm (client, 2 steps)
 src/app/[locale]/{owner,admin,coordinator,customer}/page.tsx   Role homepages (requireUser with role list)
-src/app/api/auth/otp/request    POST {phone} → {sent:true} (generic) | invalid_phone | rate_limited | provider_unavailable
-src/app/api/auth/otp/verify     POST {phone, code} → sets session cookie, {redirectTo}
 src/app/api/auth/logout         POST → revokes session, clears cookie
 src/app/api/health              GET → {ok, database}
 src/app/[locale]/hotels/        page (directory), new/, [id]/ (detail + edit + Owner actions)
@@ -58,7 +62,6 @@ src/app/[locale]/track/[id]/    Attendee-facing bus view (live status, freshness
 src/app/[locale]/coordinator/trip/[id]/  Coordinator trip screen (TripControls); own active trip only
 src/app/api/locations/          POST GPS reading (coordinator of active trip only)
 src/app/api/buses/[id]/live/    GET live snapshot (polling fallback), canViewBus
-src/app/api/realtime/auth/      Pusher private-channel auth, canViewBus
 src/app/[locale]/not-found.tsx  Translated 404 (also used for forbidden records)
 src/app/[locale]/{error,loading}.tsx  Translated error boundary (retry) and loading state
 src/app/[locale]/owner/{audit,settings}/  Owner audit log + event settings
@@ -74,14 +77,19 @@ src/components/maps/            LocationMap (dynamic, fallback when no key), Loc
 src/components/transport/LiveBus.tsx  LiveBusSummary (homepage) + LiveBusDetail (tracking: status, freshness, map, mode)
 src/components/trips/TripControls.tsx  Status buttons (statusVersion), GPS sharing panel, end trip
 src/hooks/useGeolocationSharing.ts  watchPosition + heartbeat, throttle (10 s / 5 s & 25 m), retry backoff, Wake Lock, resume after reload
-src/hooks/useBusLive.ts         Pusher subscription (lazy pusher-js) + polling (15 s, 60 s when live), newest-location merge
-src/lib/realtime/types.ts       BusLiveSnapshot, busChannel/parseBusChannel, pusherPublic (client-safe)
-src/lib/realtime/publisher.ts   RealtimePublisher (Pusher | disabled), setRealtimeForTests
+src/hooks/useBusLive.ts         Polling only: 20 s during a trip, 60 s idle, visible pages only; newest-location merge; offline state
+src/lib/realtime/types.ts       BusLiveSnapshot (polled by viewers)
 src/features/trips/actions.ts   Trip Server Actions (direct calls for TripControls; form actions for staff)
 src/features/run-action.ts      Shared `run()` wrapper for form Server Actions (moved out of admin/actions.ts)
 src/server/services/trips.ts    startTrip, endTrip, changeStatus, setSharing, recordLocation, activeTripsFor
 src/server/services/maintenance.ts  pruneOldData (retention)
 scripts/prune.ts                npm run ops:prune
+scripts/vercel-build.mjs        Vercel build: prisma migrate deploy (production only / MIGRATE_ON_BUILD=1) + next build
+scripts/loadtest-seed.ts        Load-test users/hotels/buses/trips + session tokens → tests/load/.tokens.json (git-ignored); --cleanup
+src/app/api/cron/prune/         Vercel Cron target (Bearer CRON_SECRET)
+tests/load/event-day.js         k6 scenarios: attendees (home, track, 15 s polling), gps (coordinators), staff (search)
+vercel.json                     buildCommand, region bom1, cron 21:30 UTC daily
+docs/DEPLOYMENT.md, docs/OPERATIONS.md  Deploy/runbook/load-test docs
 src/lib/maps/config.ts          mapsApiKey (placeholder "<…>" = unset), mapId (default DEMO_MAP_ID), MapPoint type
 src/lib/transport/status.ts     STATUS_KIND, STATUS_ICON, locationFreshness(live/stale/none)
 src/server/services/transport.ts  getEventSettings, getCustomerHome, getTrackedBus, toSnapshot, getBusSnapshot, assertCanViewBus, getLiveBus, publishBus
@@ -92,9 +100,8 @@ src/server/errors.ts            AppError(code, reason), forbidden/notFound/confl
 src/server/services/{hotels,buses,people}.ts  Business rules + policy checks + transactions + audit
 src/server/services/audit.ts    audit(tx, actor, action, entityType, entityId, changes)
 src/server/services/pagination.ts  PAGE_SIZE 25, pageArgs/toPage (keyset by id), OPTIONS_LIMIT 500
-src/config/env.ts               Zod env validation; refuses OTP_PROVIDER=dev in production
+src/config/env.ts               Zod env validation (APP_URL, DATABASE_URL)
 src/lib/api/                    response.ts (JSON envelope + error codes), request.ts (isSameOrigin, clientIp, readJson)
-src/lib/auth/otp/               types.ts (OtpProvider), dev.ts, twilio.ts, index.ts (picks provider from env)
 src/lib/auth/session.ts         create/validate/revoke sessions; cookie name/options
 src/lib/auth/current-user.ts    getCurrentUser (per-request cache), requireUser (pages), getApiUser (routes)
 src/lib/rate-limit/             Fixed-window DB rate limiter + AUTH_LIMITS
@@ -106,14 +113,17 @@ src/server/services/auth.ts     requestOtp, verifyOtp, logout, roleHome
 src/server/services/dashboard.ts  getEventOverview (staff), getCoordinatorOverview
 tests/setup.ts                  Points DATABASE_URL at TEST_DATABASE_URL (name must contain test/ci) or a dead URL
 tests/global-setup.ts           prisma migrate deploy on the test DB
-tests/unit/                     env, phone, policies, transport, realtime
-tests/integration/              auth, authorization, create-owner, admin-services, transport, trips, maintenance, settings (+ helpers.ts)
+tests/unit/                     env, phone, policies, transport, request, pin
+tests/integration/              auth (PIN/attendee), authorization, create-owner, admin-services, transport, trips, maintenance, settings, events (isolation/switch/PIN reset/coordinator list/read-only) (+ helpers.ts: defaultEvent, createUser→actor, moveAttendee, staff)
 AGENTS.md                       Next.js agent rules (auto-maintained block) + pointer to this file
 ```
 
-Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`; scheduled prune → Vercel Cron route or external scheduler.
+
 
 ## 4. Architecture and Data Model
+
+- **Phase 8 model:** `Event` (name, dates, isActive) → `Hotel.eventId` (required) → buses/trips/locations via hotel. `EventMember(eventId,userId,hotelId?)` registers attendees/coordinators per event (attendee hotel lives here; `User.hotelId` removed). Staff (Owner/Admin) aren't members and can access every event. `Session.eventId` = selected event; `validateSession` re-checks membership + active event for non-staff on every request and returns `user.eventId/eventName/hotelId`. Every service scopes by `eventOf(actor)`; cross-event IDs behave as not found. `Hotel` unique `(eventId, coordinatorId)`. `EventConfig.eventName` removed (event name lives on Event).
+- **Auth (Phase 8):** see SECURITY.md › Authentication. PIN = scrypt; staff flow: `pinStatus` (phone → `enter_pin`/`needs_pin`, POST /api/auth/pin-status) then `loginWithPin` or `setupPin` (only when `pinHash` is null; owner decision 2026-10-19: no setup codes, migration `20261019080000_drop_pin_setup_code`); reset = `clearPin` (clears PIN/lockout, revokes sessions); lockout 5 → 15 min; rate limits 10/15 min per phone. Attendees: phone + event only (owner decision 2026-10-19: no event code). `canResetPin`: Owner→Admin/Coordinator, Admin→Coordinator; Owner via CLI `--reset-pin`.
 
 - Full details: `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `docs/SECURITY.md` (has the permission matrix).
 - **Entities:** User, Hotel, Bus, BusStop, Trip, BusLocation (latest per bus), LocationPoint (sampled history), BusStatusEvent, Session, RateLimitBucket, AuditLog, EventConfig (single row). No schema changes in Phase 2.
@@ -134,8 +144,9 @@ Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/
 | Prisma schema, migration, constraints, seed | Verified | Phase 1 (migrate, manual SQL constraint tests, idempotent seed) |
 | Health endpoint, security headers, env validation | Verified | curl + unit tests |
 | Phone normalization | Verified | Unit tests |
-| OTP login with `dev` provider | Verified | Integration tests + manual browser login (attendee) on 375px viewport + API login (owner) |
-| OTP login with `twilio` provider | **Implemented, unverified** | No Twilio account. Code path not exercised by tests |
+| PIN sign-in, first-PIN choice, resets, lockout, rate limits | Verified | 10 integration tests (`auth.test.ts`) + 2 unit (`pin.test.ts`) + API checks on dev server (Phase 8) |
+| Attendee sign-in (phone + event + optional code) | Verified | 5 integration tests + API checks (right/wrong event) |
+| Event isolation, switching, event admin, PIN reset, coordinator search, attendee read-only | Verified | 12 integration tests (`events.test.ts`) + curl checks (cross-event URL → 404, coordinator list scoped) |
 | Generic responses (no enumeration) | Verified | Integration test: unknown/inactive numbers get `sent`, no code issued |
 | Rate limiting (send/verify per phone + IP) | Verified | Integration tests (6th send blocked; 9th verify blocked) |
 | Sessions: persistence, expiry, garbage tokens, hash-only storage | Verified | Integration tests |
@@ -147,7 +158,7 @@ Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/
 | Relationship scoping (customer/coordinator) | Verified | Integration tests (other hotel/bus/attendee denied; hotel reassignment immediate; GPS only from trip coordinator) |
 | Owner bootstrap script | Verified | Integration tests (first owner, refuse second, --allow-additional, --promote-existing, bad input) + manual run on dev DB |
 | Role homepages | Verified (basic) | Browser (customer, en + hi), curl (owner) |
-| CI workflow | Verified (Phases 1–5) | Phase 6 run pending |
+| CI workflow | Verified (Phases 1–6) | Phase 7 run pending |
 | Attendee homepage + bus tracking page | Verified | 7 integration tests (`transport.test.ts`: own bus visible with trip/location/stops; other hotel's bus and unknown IDs → not_found; hotel reassignment immediate; inactive bus hidden from attendee, visible to admin; coordinator scope; inactive coordinator omitted; no-hotel case) + 3 unit tests (freshness, status grouping). Browser as attendee at 375px with a temporary demo trip (removed afterwards): status panel, stale-location warning, Hindi tracking page, other hotel's bus → translated 404 |
 | Google Maps rendering | **Implemented, unverified** | No API key yet; the no-key fallback path was verified in the browser |
 | Trips/status/GPS server logic | Verified | 11 integration tests (`trips.test.ts`): start permissions, one trip per bus/coordinator, staff start for designated coordinator, statusVersion conflicts, double-tap no-op, staff correction audited, GPS only from trip coordinator, out-of-order/duplicate ignored, future clock rejected, old ignored, history sampling, end trip clears live position and blocks updates, sharing permissions, live snapshot scoping |
@@ -155,37 +166,32 @@ Planned locations: load tests → `tests/load/` (k6); deployment docs → `docs/
 | Coordinator trip screen + GPS hook | Verified with **simulated** GPS | Browser at 375px: start trip, status buttons (saved + highlighted), sharing with a geolocation shim (moving coordinates): 5 uploads/30 s while moving; permission-denied path shown on reload (pane blocks real geolocation); network loss during dev-server restart recovered |
 | Live attendee updates (polling) | Verified | Browser tracking page updated position, status ("Reached bus stop") and trip end without reload; curl: other hotel's attendee 404 on live endpoint, 403 posting locations; realtime auth returns 503 when Pusher not configured |
 | Real phone GPS (Android/iPhone) | **Unverified** | Needs a device test on HTTPS (geolocation requires a secure context; localhost is allowed) |
-| Pusher live delivery | **Implemented, unverified** | No Pusher app yet |
 | Owner audit log + settings | Verified | 4 tests (`settings.test.ts`: bounds, owner-only, changed-fields audit, paging, entity filter, sign-ins hidden) + browser: invalid value shows field error and keeps input, valid save "Saved." |
 | Profile language preference | Verified (manual) | Browser: saving Hindi redirects to `/hi/profile?saved=1` with confirmation; select is properly labelled |
+| CSP + security headers | Verified (local) | curl: nonce on all 31 scripts; browser dev + local production build: no CSP violations, pages hydrate, language switch works. Not yet verified with live Maps/Pusher |
+| Same-origin check on any host | Verified | 4 unit tests (`request.test.ts`) |
+| Cron prune endpoint | Verified (local) | curl: 503 without secret, 401 wrong token, 200 runs prune |
+| Load-test tooling | Seed verified; **k6 run not yet done** | Seed created 60 attendees/6 buses/tokens on test DB and cleaned up; refused a production-like DB name. k6 not installed locally; no staging yet |
 | Accessibility/i18n polish | Verified (manual) | First Tab focuses translated skip link; language switch keeps `?role=…`; filters collapsed on phone, open with count when active; en/hi keys match (344 each); all 28 audit actions labelled |
 | Hotel/bus/stop/person services + policies | Verified | 23 integration tests (`admin-services.test.ts`): CRUD, owner-only actions denied to admins, customers/coordinators denied, coordinator move, deactivation guards, duplicate phone/registration, stops ordering, pagination + search, session revocation |
 | Admin UI (directories, detail pages, forms) | Verified (manual) | Browser as Owner at 375px: dashboard, hotels list, hotel detail, validation errors keep input + show field messages, successful save, add stop (form resets), Hindi people directory. curl: Admin sees edit/stop controls but no Owner-only buttons; Owner sees all; customer redirected from staff pages |
 
 ## 6. Outstanding Tasks (prioritized)
 
-- [x] Phase 1 — Foundation
-- [x] Phase 2 — Auth & authorization (Twilio live test pending)
-- [x] Phase 3 — Core administration
-- [x] Phase 4 — Customer experience (Maps live test pending)
-- [x] Phase 5 — Trips, status and live GPS (real-device GPS + Pusher live tests pending)
-- [x] Phase 6 — Bilingual UI and accessibility
-- [ ] **Phase 7 — Verification and deployment** (next)
-  - [ ] Choose + create managed Postgres (e.g. Neon/Supabase, region ap-south-1) and Vercel project; set env vars; `prisma migrate deploy`; `owner:create`
-  - [ ] Create Twilio Verify, Pusher, Google Maps accounts/keys (owner action) and verify each live
-  - [ ] Real-device GPS test (Android Chrome + iPhone Safari) on the HTTPS deployment
-  - [ ] Scheduled `ops:prune` (Vercel Cron → protected route, or GitHub Actions schedule)
-  - [ ] Content-Security-Policy header (Maps, Pusher, fonts)
-  - [ ] k6 load-test scripts (`tests/load/`) + run against a staging deployment; record results
-  - [ ] `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`; production smoke test
+- [x] Phases 1–7 (Phase 7 in PR #7, unmerged)
+- [x] Phase 8 — zero-cost auth, multi-event, coordinator search, location audit (local verification only)
+- [ ] **Release** (next): review PR #7 + Phase 8 together; owner creates Neon DB + Vercel env vars (no Twilio/Pusher); merge combined changes; first production deploy (migrations run automatically); `owner:create` → sign in at once and choose PIN; create events; smoke test (DEPLOYMENT.md §5)
+- [ ] Real-device GPS test (Android Chrome, iPhone Safari) + laptop fallback test on the HTTPS deployment
+- [ ] Staging k6 run (OPERATIONS.md) and decide hosting plan vs. load (DEPLOYMENT.md › Cost review)
+- [ ] Optional: longer attendee poll interval if free-tier limits bite
 
 ## 7. Current Development State
 
-- **Last completed task:** Phase 6 (branch `feat/phase-6-polish`).
-- **In progress:** nothing.
-- **Next recommended task:** Phase 7 — deployment and live verification. Needs the project owner to create accounts (Vercel, managed Postgres, Twilio, Pusher, Google Cloud) and share access/env values securely (never in chat or Git).
-- **Incomplete changes:** none.
-- **Check results (2026-10-19, local, dev server stopped):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 107/107 (13 files), `npm run build` ✅.
+- **Last completed task:** Phase 8 + owner follow-ups (no attendee event code; phone-first staff sign-in, first PIN chosen at sign-in, no setup codes).
+- **In progress:** PR [#8](https://github.com/LiquifiedDoormat/event-management-platform/pull/8) (`feat/phase-8-events-pin` → `feat/phase-7-deploy`, stacked on PR #7) open for review, Auto-fix on. Not merged, not deployed.
+- **Next recommended task:** owner reviews PR #7 + #8; account setup (Neon + Vercel env vars); release both together per §6 only with explicit owner authorization.
+- **Check results (2026-10-19, local, dev server stopped):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 117/117 (15 files), `npm run build` ✅ (re-run after the phone-first PIN change). Migration verified on empty DB, populated dev DB and test DB (no drift). API checks against dev server: attendee/PIN sign-in per event, wrong-event refusal, cross-event 404s, coordinator list scoping — all as expected.
+- **CI:** PR #7 green; PR #8 CI running (watched by Auto-fix).
 
 ## 8. Setup and Execution
 
@@ -196,7 +202,7 @@ npm run db:up                    # Docker Postgres 17 on :5432 (creates event_de
 npm run db:migrate               # apply migrations to dev DB
 npm run db:seed                  # optional local demo data
 npm run owner:create -- --phone "<mobile>" --name "<name>"   # first Owner
-npm run dev                      # http://localhost:3000 ; dev OTP codes print in this terminal
+npm run dev                      # http://localhost:3000 ; sign in with the demo table in README (demo PIN 246810)
 npm run check                    # lint + typecheck + all tests (integration tests need TEST_DATABASE_URL)
 npm run build                    # production build
 ```
@@ -207,21 +213,24 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 
 | Service | Status |
 | --- | --- |
-| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#5 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
+| GitHub `LiquifiedDoormat/event-management-platform` (public) | Connected. PRs #1–#6 merged into `main`. Pushes use `LiquifiedDoormat` via `gh auth setup-git`. Commits authored as `LiquifiedDoormat <324446387+LiquifiedDoormat@users.noreply.github.com>` (repo-local git config). |
 | PostgreSQL | Local Docker only. Managed provider not chosen/created. |
-| Phone OTP | `dev` provider locally. Twilio Verify implemented; **account not created, untested**. Env: `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Setup steps + pricing notes in README. |
-| Realtime (Pusher Channels) | Integrated (`PUSHER_APP_ID`, `PUSHER_SECRET`, `NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`); **no app yet, untested**. Without it the app polls every 15 s. Setup + cost notes in README › Live updates. |
-| Google Maps Platform | Integrated (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, optional `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`); **no key yet, untested with Google**. Setup, restrictions, billing and quota steps in README › Google Maps. |
+| Phone OTP | **Removed** (Phase 8). Sign-in is built in; no provider. |
+| Realtime | **Removed Pusher** (Phase 8). Viewers poll `/api/buses/[id]/live`. |
+| Google Maps Platform | Optional (off by default; links only). Integrated (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, optional `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`); **no key yet, untested with Google**. Setup, restrictions, billing and quota steps in README › Google Maps. |
 | Vercel | Not set up. |
 
 ## 10. Known Issues and Risks
+
+- **Residual security risks (accepted, see SECURITY.md):** 6-digit PIN strength (mitigated by lockout/rate limits/weak-PIN rejection); attendee impersonation by phone number + event (owner accepted; no event code) — read-only, own-hotel data only; accounts without a PIN (new or reset) can be claimed by anyone knowing the number until the person sets it (owner accepted 2026-10-19; mitigated by prompt setup, PIN status in People, `auth.pinSet` audit).
+- **Cost assumptions unverified:** Vercel Hobby non-commercial terms and invocation limits; Neon free compute; polling load at 2,000 viewers likely exceeds free tiers (DEPLOYMENT.md › Cost review). Not measured (no staging/k6 yet).
+- **Release hazard:** merging PR #7 (Phase 7) to `main` **without** Phase 8 would deploy code that still requires Twilio for sign-in. Release Phase 7 and 8 together.
+- **Location audit:** server ingest/validation/ordering/event scoping verified by tests; client flow verified with a simulated GPS shim (Phase 5) and the permission-denied path; HTTPS check, >100 m accuracy warning and signed-out handling added but **not exercised on real hardware**. Background tracking on mobile browsers is not reliable (documented).
 
 - Prisma's npm `latest` tag points to `8.0.0-rc.23`; we pin stable **7.10.1** deliberately.
 - Next.js 16 differs from older versions (`proxy.ts`, `PageProps`/`LayoutProps` from `next typegen`, async `cookies()`). Read `node_modules/next/dist/docs/` before using unfamiliar APIs.
 - `cacheComponents` is off; all role pages are dynamic (they read cookies).
 - `next build` runs with `NODE_ENV=production`; never read env at import time (see `src/lib/db/prisma.ts`).
-- OTP request timing differs slightly between registered and unregistered numbers (only registered ones call the SMS provider). Low risk; document if it matters.
-- The `dev` OTP store is in-memory per process; fine locally, refused in production.
 - Expired `Session` and `RateLimitBucket` rows are not yet cleaned up (needs a scheduled job; Phase 7).
 - In the browser tool, clicking by screen coordinates at 375px emulation missed the target once; use element refs when automating.
 - Mobile browsers suspend JS when the screen locks, so GPS sharing needs the page open (documented in ARCHITECTURE).
@@ -232,13 +241,13 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 - npm 12 (local) blocks dependency install scripts by default (`npm install-scripts ls` lists prisma, esbuild, @swc/core, unrs-resolver, …). The app builds and runs without them; CI uses Node 22/npm 10, which runs them. Approve with `npm install-scripts approve <pkg>` only if something breaks.
 - `.env` copied from `.env.example` contains `<…>` placeholders for Maps keys; `src/lib/maps/config.ts` treats those as unset.
 - **Dev server reload loop:** running `next build` or `next typegen` (part of `npm run typecheck`/`check`) while `npm run dev` is running corrupted the dev cache once, causing endless page reloads. Fix: stop dev, `rm -rf .next`, restart. Prefer stopping the dev server before `npm run check`/`build`. Newly added nested API route folders may also need a dev-server restart.
+- `upgrade-insecure-requests` is only sent in production. Local `next start` over HTTP still worked in Chrome (localhost is treated as secure).
 - **Vercel is connected to the repo** (project `event-management-platform`, team `tgrj`); it builds a preview for each PR. The first preview (PR #6) failed because `prisma.config.ts` used prisma's `env("DATABASE_URL")`, which throws during `npm install` → `prisma generate` when the variable is unset. Fixed by reading `process.env.DATABASE_URL ?? ""`; install and `next build` now succeed with no env vars. Deployed pages still need the env vars (Phase 7) — and `OTP_PROVIDER=dev` is refused in production builds, so previews need Twilio (or a preview-only plan) before anyone can sign in.
 - After editing a `"use server"` file, the running dev server once served a stale module (an action was `undefined` → page error). Restarting the dev server with a clean `.next` fixed it.
 - Protected pages now return HTTP 200 with an in-page redirect when signed out (because of `loading.tsx` streaming); no data is leaked (see SECURITY.md). Tests/tools should not expect a 307 for pages.
 - GPS sharing needs the coordinator page open and on screen (browser limitation); Wake Lock helps where supported (not on all iOS versions). Background tracking would need a native app.
 - Geolocation requires HTTPS in production (secure context).
-- Pusher-js is loaded lazily only when `NEXT_PUBLIC_PUSHER_KEY` is set.
-- No Content-Security-Policy yet. Load/scale targets unverified.
+- Load/scale targets unverified (no staging k6 run yet).
 
 ## 11. Change History
 
@@ -276,10 +285,31 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
   - Changed: layout (skip link, `<main id="main">`, profile link, LanguageSwitcher in Suspense), `LanguageSwitcher` (keeps query; `LanguageSwitcherWithQuery`), `Directory.SearchForm` (collapsible filters, `activeFilters`), directory pages (filter counts), owner home (tool links), back links → `BackLink`, `admin/actions.ts` (`updateSettingsAction`), OTP verify returns `locale` and LoginForm navigates in it, messages en/hi (`settings`, `audit`, `profile`, error/loading/skip strings; soft hyphen in en `nav.coordinators`), README, SECURITY, ARCHITECTURE.
   - No schema changes, no new dependencies.
 
+- **2026-10-19 — Phase 7 deployment tooling** (`feat/phase-7-deploy`):
+  - Added: `vercel.json`, `scripts/{vercel-build.mjs,loadtest-seed.ts}`, `src/app/api/cron/prune/route.ts`, `tests/load/event-day.js`, `tests/unit/request.test.ts`, `docs/{DEPLOYMENT,OPERATIONS}.md`.
+  - Changed: `src/proxy.ts` (CSP nonce + request-header override merge), `src/lib/api/request.ts` (`isSameOrigin` accepts own host), `prisma.config.ts` (`DIRECT_DATABASE_URL`), `.env.example` (`CRON_SECRET`, `DIRECT_DATABASE_URL`), `.gitignore` (load-test tokens), `package.json` (`vercel-build`), README, SECURITY.
+  - No schema changes, no new dependencies.
+
+- **2026-10-19 — Phase 8 zero-cost auth, events, coordinator search, location audit** (`feat/phase-8-events-pin`, commits 4327f8f + docs commit):
+  - Migration `20261019060000_events_membership_pin` (hand-ordered backfill; see DATABASE.md).
+  - Added: `src/lib/auth/pin.ts`, `src/lib/api/auth-response.ts`, routes `api/auth/{pin,setup-pin,attendee}`, `src/server/services/{events,context}.ts`, pages `[locale]/events`, `[locale]/events/[id]`, `[locale]/coordinator/people`, `components/{layout/EventSwitcher,events/EventFields}.tsx`, `features/events/actions.ts`, tests `tests/integration/events.test.ts`, `tests/unit/pin.test.ts`.
+  - Rewritten: `services/{auth,people}.ts`, `components/auth/LoginForm.tsx`, `hooks/useBusLive.ts` (polling only), `prisma/seed.ts` (two events, demo PIN 246810), `tests/integration/{auth,helpers}.ts`, README, `.env.example`.
+  - Changed: session (event context), policies (`canResetPin`, event actions), scope/hotels/buses/transport/trips/dashboard/settings (event scoping), create-owner (`--reset-pin` clears the PIN), loadtest-seed, TripControls/useGeolocationSharing (HTTPS, accuracy, signed-out), CSP (no Pusher), CI env, SECURITY/ARCHITECTURE/DATABASE/DEPLOYMENT/OPERATIONS.
+  - Removed: `src/lib/auth/otp/*`, `api/auth/otp/*`, `src/lib/realtime/publisher.ts`, `api/realtime/auth`, `tests/unit/realtime.test.ts`, deps `pusher`, `pusher-js`; env `OTP_PROVIDER`, `TWILIO_*`, `PUSHER_*`.
+
+- **2026-10-19 — Attendee event code removed** (owner request): dropped `Event.attendeeCodeHash` (new migration `20261019070000_drop_event_attendee_code`), the login field, event form fields, service logic, tests and docs. Attendees sign in with phone number + event only.
+
+- **2026-10-19 — Phone-first staff sign-in, setup codes removed** (owner request: "just ask for their phone number, check if they have set a password or not; if no then ask to set a password"):
+  - Migration `20261019080000_drop_pin_setup_code` drops `User.pinSetupCodeHash`/`pinSetupExpiresAt`.
+  - Added `pinStatus` + route `POST /api/auth/pin-status` (`enter_pin`/`needs_pin`; attendees/unknown numbers answer `enter_pin`). `setupPin` no longer takes a code; it works only while `pinHash` is null (conditional update), audit `auth.pinSet`.
+  - Reset PIN (`clearPin`) clears PIN + lockout + sessions; no code shown. Removed secret plumbing from `ActionForm`/`run-action`/`action-state`; `create-owner` prints sign-in instructions only.
+  - LoginForm staff tab: phone → Continue → PIN, or choose PIN twice; "Use a different number". Strings updated EN/HI; `pin` client namespace removed.
+  - Accepted risk documented in SECURITY.md (unclaimed accounts).
+
 ## 12. Instructions for the Next AI
 
-1. Read `docs/MASTER_PROMPT.md` (requirements), this file, then `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DATABASE.md`, `AGENTS.md`.
-2. Run `git status`, `git log --oneline -10`, `git branch -a`; check whether the Phase 6 PR has merged.
-3. Verify state: `npm install && npm run db:up && npm run db:migrate && npm run check && npm run build`.
-4. Constraints: never commit `.env` or secrets; never force-push; never reset/drop the production DB; every endpoint follows the request pattern in §4 and uses `src/server/policies`; don't mark features verified without running checks; keep `messages/en.json` and `hi.json` keys in sync; update this file after each milestone.
-5. **Next concrete action:** Phase 7 step 1: write `docs/DEPLOYMENT.md` (Vercel + managed Postgres setup, env vars, `prisma migrate deploy` in build, owner bootstrap) and add a protected cron route for `pruneOldData`; then ask the owner to create the external accounts.
+1. Read this file, `docs/SECURITY.md` (auth model + residual risks), `docs/DEPLOYMENT.md` (incl. cost review), then `docs/MASTER_PROMPT.md` (original brief; Phase 8 replaced its SMS-OTP and Pusher parts).
+2. `git status`, `git log --oneline -10`, `git branch -a`, `gh pr list` — check PR #7 and whether a Phase 8 PR exists/merged.
+3. Verify: `npm install && npm run db:up && npm run db:migrate && npm run db:seed && npm run check && npm run build` (stop the dev server first). Sign in locally with the demo table in README.
+4. Constraints: no paid providers without owner approval; never commit `.env`/secrets/PINs; never force-push; never reset/drop production; every query scoped with `eventOf(actor)`; attendees read-only; don't merge or deploy without explicit owner authorization; release Phase 7 + 8 together.
+5. **Next concrete action:** with owner approval, push `feat/phase-8-events-pin`, open a PR into `feat/phase-7-deploy`, let CI run, then follow the release checklist in §6.

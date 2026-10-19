@@ -53,3 +53,6 @@ Thumbs.db
 
 # --- Claude Code local settings ---
 .claude/settings.local.json
+
+# --- Load-test session tokens (never commit) ---
+tests/load/.tokens.json

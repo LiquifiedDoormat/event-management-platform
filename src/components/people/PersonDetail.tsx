@@ -2,10 +2,10 @@ import { getFormatter, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { BackLink } from "@/components/ui/BackLink";
 import type { SessionUser } from "@/lib/auth/session";
-import { assignableRoles, can, canEditPerson, canSetAttendeeHotel } from "@/server/policies";
+import { assignableRoles, can, canEditPerson, canResetPin, canSetAttendeeHotel } from "@/server/policies";
 import { getPerson } from "@/server/services/people";
 import { hotelOptions } from "@/server/services/hotels";
-import { changeRoleAction, setPersonHotelAction, setPersonStatusAction, updatePersonAction } from "@/features/admin/actions";
+import { changeRoleAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, updatePersonAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, PageHeader, Section } from "@/components/ui/Layout";
@@ -19,6 +19,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   const canHotel = person.role === "CUSTOMER" && canSetAttendeeHotel(user, person.hotelId);
   const canRole = !isSelf && can(user, "person.changeRole") && canEditPerson(user, person);
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
+  const canPin = canResetPin(user, person);
   const [t, tc, tr, ts, format, hotels] = await Promise.all([
     getTranslations("people"),
     getTranslations("common"),
@@ -98,6 +99,27 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
           <ActionForm action={changeRoleAction} hidden={{ id: person.id }} submitLabel={t("changeRole")} confirmMessage={t("confirmRoleChange")} inline>
             <SelectField name="role" label={t("role")} defaultValue={person.role} hint={t("roleHint")} options={assignableRoles(user).map((r) => ({ value: r, label: tr(r) }))} />
           </ActionForm>
+        </Section>
+      )}
+
+      {person.pin && (canPin || isSelf) && (
+        <Section title={t("pinTitle")}>
+          <p>
+            {person.pin.lockedUntil
+              ? t("pinLocked", { time: format.dateTime(person.pin.lockedUntil, { timeStyle: "short" }) })
+              : person.pin.isSet
+                ? t("pinIsSet")
+                : t("pinNotSet")}
+          </p>
+          {canPin && (
+            <ActionForm
+              action={resetPinAction}
+              hidden={{ id: person.id }}
+              submitLabel={t("resetPin")}
+              confirmMessage={t("confirmResetPin", { name: person.name })}
+              tone="secondary"
+            />
+          )}
         </Section>
       )}
 

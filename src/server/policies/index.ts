@@ -4,7 +4,11 @@ import type { Role } from "@/generated/prisma/client";
 // these (after authenticating) before reading or changing data. See docs/SECURITY.md
 // for the permission matrix in prose.
 
-export type Actor = { id: string; role: Role; hotelId: string | null };
+/**
+ * The signed-in user as seen by policies. `eventId` is the event selected in the
+ * session (re-validated per request); `hotelId` is an attendee's hotel in that event.
+ */
+export type Actor = { id: string; role: Role; hotelId?: string | null; eventId?: string | null };
 
 /** What a non-staff user is allowed to see/operate, loaded by `loadScope`. */
 export type Scope = {
@@ -40,7 +44,10 @@ export type Action =
   | "trip.manage"
   | "trip.correctStatus"
   | "audit.view"
-  | "config.update";
+  | "config.update"
+  | "event.create"
+  | "event.update"
+  | "event.deactivate";
 
 const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "dashboard.viewAll",
@@ -53,6 +60,8 @@ const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "person.update",
   "trip.manage",
   "trip.correctStatus",
+  "event.create",
+  "event.update",
 ]);
 
 export function can(actor: Actor, action: Action): boolean {
@@ -78,6 +87,18 @@ export function assignableRoles(actor: Actor): Role[] {
  */
 export function canSetAttendeeHotel(actor: Actor, currentHotelId: string | null): boolean {
   return can(actor, "person.reassignHotel") || (actor.role === "ADMIN" && currentHotelId === null);
+}
+
+/**
+ * PIN resets (issue a new one-time setup code): Owner for Admins and
+ * Coordinators; Admins for Coordinators. Owners recover via the CLI script.
+ * Attendees have no PIN.
+ */
+export function canResetPin(actor: Actor, target: { id: string; role: Role }): boolean {
+  if (actor.id === target.id) return false;
+  if (actor.role === "OWNER") return target.role === "ADMIN" || target.role === "COORDINATOR";
+  if (actor.role === "ADMIN") return target.role === "COORDINATOR";
+  return false;
 }
 
 /** Admins may edit attendees and coordinators, never other staff. */

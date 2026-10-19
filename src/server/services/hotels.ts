@@ -6,6 +6,7 @@ import { can, type Actor } from "@/server/policies";
 import { AppError, conflict, forbidden, notFound } from "@/server/errors";
 import { audit } from "./audit";
 import { OPTIONS_LIMIT, pageArgs, toPage } from "./pagination";
+import { eventOf } from "./context";
 
 function requireCan(actor: Actor, action: Parameters<typeof can>[1]) {
   if (!can(actor, action)) throw forbidden();
@@ -14,6 +15,7 @@ function requireCan(actor: Actor, action: Parameters<typeof can>[1]) {
 export async function listHotels(actor: Actor, opts: { q?: string; cursor?: string; includeInactive?: boolean }) {
   requireCan(actor, "dashboard.viewAll");
   const where: Prisma.HotelWhereInput = {
+    eventId: eventOf(actor),
     ...(opts.includeInactive ? {} : { isActive: true }),
     ...(opts.q
       ? {
@@ -38,7 +40,7 @@ export async function listHotels(actor: Actor, opts: { q?: string; cursor?: stri
       _count: {
         select: {
           buses: { where: { isActive: true } },
-          attendees: { where: { role: "CUSTOMER", status: "ACTIVE" } },
+          members: { where: { user: { role: "CUSTOMER", status: "ACTIVE" } } },
         },
       },
     },
@@ -48,8 +50,8 @@ export async function listHotels(actor: Actor, opts: { q?: string; cursor?: stri
 
 export async function getHotel(actor: Actor, id: string) {
   requireCan(actor, "dashboard.viewAll");
-  const hotel = await prisma.hotel.findUnique({
-    where: { id },
+  const hotel = await prisma.hotel.findFirst({
+    where: { id, eventId: eventOf(actor) },
     select: {
       id: true,
       name: true,
@@ -65,7 +67,7 @@ export async function getHotel(actor: Actor, id: string) {
         orderBy: { label: "asc" },
         select: { id: true, label: true, registration: true, isActive: true },
       },
-      _count: { select: { attendees: { where: { role: "CUSTOMER", status: "ACTIVE" } } } },
+      _count: { select: { members: { where: { user: { role: "CUSTOMER", status: "ACTIVE" } } } } },
     },
   });
   if (!hotel) throw notFound();
@@ -75,7 +77,7 @@ export async function getHotel(actor: Actor, id: string) {
 export async function createHotel(actor: Actor, input: HotelInput) {
   requireCan(actor, "hotel.create");
   return prisma.$transaction(async (tx) => {
-    const hotel = await tx.hotel.create({ data: input, select: { id: true } });
+    const hotel = await tx.hotel.create({ data: { ...input, eventId: eventOf(actor) }, select: { id: true } });
     await audit(tx, actor, "hotel.create", "Hotel", hotel.id, { name: input.name });
     return hotel;
   });
@@ -84,7 +86,7 @@ export async function createHotel(actor: Actor, input: HotelInput) {
 export async function updateHotel(actor: Actor, id: string, input: HotelInput) {
   requireCan(actor, "hotel.update");
   return prisma.$transaction(async (tx) => {
-    const before = await tx.hotel.findUnique({ where: { id }, select: { id: true } });
+    const before = await tx.hotel.findFirst({ where: { id, eventId: eventOf(actor) }, select: { id: true } });
     if (!before) throw notFound();
     await tx.hotel.update({
       where: { id },
@@ -103,19 +105,19 @@ export async function updateHotel(actor: Actor, id: string, input: HotelInput) {
 export async function setHotelActive(actor: Actor, id: string, isActive: boolean) {
   requireCan(actor, "hotel.deactivate");
   return prisma.$transaction(async (tx) => {
-    const hotel = await tx.hotel.findUnique({
-      where: { id },
+    const hotel = await tx.hotel.findFirst({
+      where: { id, eventId: eventOf(actor) },
       select: {
         _count: {
           select: {
             buses: { where: { isActive: true } },
-            attendees: { where: { status: "ACTIVE" } },
+            members: { where: { user: { status: "ACTIVE" } } },
           },
         },
       },
     });
     if (!hotel) throw notFound();
-    if (!isActive && (hotel._count.buses > 0 || hotel._count.attendees > 0)) throw conflict("hotelInUse");
+    if (!isActive && (hotel._count.buses > 0 || hotel._count.members > 0)) throw conflict("hotelInUse");
     await tx.hotel.update({ where: { id }, data: { isActive } });
     await audit(tx, actor, isActive ? "hotel.activate" : "hotel.deactivate", "Hotel", id);
   });
@@ -128,18 +130,19 @@ export async function setHotelActive(actor: Actor, id: string, isActive: boolean
 export async function assignHotelCoordinator(actor: Actor, hotelId: string, coordinatorId: string | null) {
   requireCan(actor, "hotel.assignCoordinator");
   return prisma.$transaction(async (tx) => {
-    const hotel = await tx.hotel.findUnique({ where: { id: hotelId }, select: { coordinatorId: true } });
+    const eventId = eventOf(actor);
+    const hotel = await tx.hotel.findFirst({ where: { id: hotelId, eventId }, select: { coordinatorId: true } });
     if (!hotel) throw notFound();
     let movedFrom: string | null = null;
     if (coordinatorId) {
-      const coordinator = await tx.user.findUnique({
-        where: { id: coordinatorId },
-        select: { role: true, status: true, coordinatedHotel: { select: { id: true } } },
+      // Must be an active coordinator registered for this event.
+      const coordinator = await tx.user.findFirst({
+        where: { id: coordinatorId, role: "COORDINATOR", status: "ACTIVE", memberships: { some: { eventId } } },
+        select: { id: true },
       });
-      if (!coordinator || coordinator.role !== "COORDINATOR" || coordinator.status !== "ACTIVE") {
-        throw new AppError("invalid", "notActiveCoordinator");
-      }
-      movedFrom = coordinator.coordinatedHotel?.id ?? null;
+      if (!coordinator) throw new AppError("invalid", "notActiveCoordinator");
+      // A coordinator designates at most one hotel per event.
+      movedFrom = (await tx.hotel.findFirst({ where: { eventId, coordinatorId }, select: { id: true } }))?.id ?? null;
       if (movedFrom && movedFrom !== hotelId) {
         await tx.hotel.update({ where: { id: movedFrom }, data: { coordinatorId: null } });
       }
@@ -157,7 +160,7 @@ export async function assignHotelCoordinator(actor: Actor, hotelId: string, coor
 export async function hotelOptions(actor: Actor) {
   requireCan(actor, "dashboard.viewAll");
   return prisma.hotel.findMany({
-    where: { isActive: true },
+    where: { isActive: true, eventId: eventOf(actor) },
     orderBy: { name: "asc" },
     take: OPTIONS_LIMIT,
     select: { id: true, name: true },

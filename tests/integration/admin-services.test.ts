@@ -6,7 +6,7 @@ import { AppError } from "@/server/errors";
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
-import { createTwoHotels, createUser, hasTestDb, resetDb } from "./helpers";
+import { createTwoHotels, createUser, hasTestDb, resetDb, staff } from "./helpers";
 
 async function expectError(promise: Promise<unknown>, code: AppError["code"], reason?: string) {
   const err = await promise.then(
@@ -24,7 +24,7 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
   beforeEach(resetDb);
 
   it("lets admins create and edit hotels", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { id } = await hotels.createHotel(admin, hotel("Palm"));
     await hotels.updateHotel(admin, id, hotelInput.parse({ name: "Palm Court", address: "1 Palm Rd", latitude: "12.9", longitude: "77.6" }));
     const h = await hotels.getHotel(admin, id);
@@ -37,7 +37,7 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
   });
 
   it("keeps owner-only actions away from admins", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { hotelA, coordB } = await createTwoHotels();
     await expectError(hotels.setHotelActive(admin, hotelA.id, false), "forbidden");
     await expectError(hotels.assignHotelCoordinator(admin, hotelA.id, coordB.id), "forbidden");
@@ -51,7 +51,7 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
   });
 
   it("moves a coordinator between hotels, keeping one hotel per coordinator", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { hotelA, hotelB, coordA } = await createTwoHotels();
     await hotels.assignHotelCoordinator(owner, hotelB.id, coordA.id);
     expect((await prisma.hotel.findUniqueOrThrow({ where: { id: hotelB.id } })).coordinatorId).toBe(coordA.id);
@@ -59,13 +59,13 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
   });
 
   it("only assigns active coordinators", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { hotelA, guestA } = await createTwoHotels();
     await expectError(hotels.assignHotelCoordinator(owner, hotelA.id, guestA.id), "invalid", "notActiveCoordinator");
   });
 
   it("won't deactivate a hotel that still has buses or attendees", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { hotelA } = await createTwoHotels();
     await expectError(hotels.setHotelActive(owner, hotelA.id, false), "conflict", "hotelInUse");
     const empty = await hotels.createHotel(owner, hotel("Empty"));
@@ -74,7 +74,7 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
   });
 
   it("paginates and searches", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     for (let i = 0; i < 30; i++) await hotels.createHotel(admin, hotel(`Hotel ${String(i).padStart(2, "0")}`));
     const first = await hotels.listHotels(admin, {});
     expect(first.items).toHaveLength(25);
@@ -89,21 +89,21 @@ describe.skipIf(!hasTestDb)("bus service", () => {
   beforeEach(resetDb);
 
   it("creates buses, rejects duplicate registrations and inactive hotels", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { hotelA } = await createTwoHotels();
     const input = busInput.parse({ label: "Bus 9", registration: "ka 01 ab 1234" });
     const { id } = await buses.createBus(admin, { ...input, hotelId: hotelA.id });
     expect((await buses.getBus(admin, id)).registration).toBe("KA01AB1234");
     await expectError(buses.createBus(admin, { ...input, hotelId: hotelA.id }), "conflict", "duplicateRegistration");
 
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const closed = await hotels.createHotel(owner, hotel("Closed"));
     await hotels.setHotelActive(owner, closed.id, false);
     await expectError(buses.createBus(admin, { ...busInput.parse({ label: "X" }), hotelId: closed.id }), "invalid", "hotelInactive");
   });
 
   it("edits stops and keeps them in order", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { busA } = await createTwoHotels();
     for (const name of ["One", "Two", "Three"]) await buses.addStop(admin, busA.id, { name });
     let stops = (await buses.getBus(admin, busA.id)).stops;
@@ -122,8 +122,8 @@ describe.skipIf(!hasTestDb)("bus service", () => {
   });
 
   it("lets only the owner reassign a bus's hotel or coordinator", async () => {
-    const admin = await createUser("ADMIN");
-    const owner = await createUser("OWNER");
+    const admin = await staff("ADMIN");
+    const owner = await staff("OWNER");
     const { busA, hotelB, coordB } = await createTwoHotels();
     await expectError(buses.reassignBusHotel(admin, busA.id, hotelB.id), "forbidden");
     await expectError(buses.assignBusCoordinator(admin, busA.id, coordB.id), "forbidden");
@@ -135,7 +135,7 @@ describe.skipIf(!hasTestDb)("bus service", () => {
   });
 
   it("won't deactivate a bus that is on a trip", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { busA, coordA } = await createTwoHotels();
     await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id } });
     await expectError(buses.setBusActive(owner, busA.id, false), "conflict", "busOnTrip");
@@ -146,11 +146,12 @@ describe.skipIf(!hasTestDb)("people service", () => {
   beforeEach(resetDb);
 
   it("lets admins provision attendees (with a first hotel) but not staff", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { hotelA } = await createTwoHotels();
     const input = personCreateInput.parse({ name: "New Guest", phone: "98111 22222", role: "CUSTOMER", hotelId: hotelA.id });
     const { id } = await people.createPerson(admin, input);
-    expect(await prisma.user.findUniqueOrThrow({ where: { id } })).toMatchObject({ phone: "+919811122222", hotelId: hotelA.id });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id } })).toMatchObject({ phone: "+919811122222" });
+    expect((await prisma.eventMember.findFirstOrThrow({ where: { userId: id } })).hotelId).toBe(hotelA.id);
 
     await expectError(
       people.createPerson(admin, personCreateInput.parse({ name: "X", phone: "98111 33333", role: "ADMIN" })),
@@ -168,8 +169,8 @@ describe.skipIf(!hasTestDb)("people service", () => {
   });
 
   it("lets admins make the first hotel allotment but only the owner change it", async () => {
-    const admin = await createUser("ADMIN");
-    const owner = await createUser("OWNER");
+    const admin = await staff("ADMIN");
+    const owner = await staff("OWNER");
     const { hotelA, hotelB, guestA } = await createTwoHotels();
     await expectError(people.setPersonHotel(admin, guestA.id, hotelB.id), "forbidden");
 
@@ -178,12 +179,12 @@ describe.skipIf(!hasTestDb)("people service", () => {
     await expectError(people.setPersonHotel(admin, unassigned.id, hotelB.id), "forbidden");
 
     await people.setPersonHotel(owner, guestA.id, hotelB.id);
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: guestA.id } })).hotelId).toBe(hotelB.id);
+    expect((await prisma.eventMember.findFirstOrThrow({ where: { userId: guestA.id } })).hotelId).toBe(hotelB.id);
   });
 
   it("stops admins editing other staff or changing roles", async () => {
-    const admin = await createUser("ADMIN");
-    const otherAdmin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
+    const otherAdmin = await staff("ADMIN");
     const { guestA } = await createTwoHotels();
     await expectError(people.updatePerson(admin, otherAdmin.id, { name: "Hacked", phone: otherAdmin.phone }), "forbidden");
     await expectError(people.changeRole(admin, admin.id, "OWNER"), "forbidden");
@@ -192,9 +193,9 @@ describe.skipIf(!hasTestDb)("people service", () => {
   });
 
   it("deactivation signs the person out everywhere", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { guestA } = await createTwoHotels();
-    const { token } = await createSession(guestA.id);
+    const { token } = await createSession(guestA.id, guestA.eventId);
     await people.setPersonStatus(owner, guestA.id, "INACTIVE");
     expect(await validateSession(token)).toBeNull();
     expect((await prisma.session.findFirstOrThrow({ where: { userId: guestA.id } })).revokedAt).not.toBeNull();
@@ -203,13 +204,13 @@ describe.skipIf(!hasTestDb)("people service", () => {
   });
 
   it("owner can't deactivate or demote themselves", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     await expectError(people.setPersonStatus(owner, owner.id, "INACTIVE"), "forbidden");
     await expectError(people.changeRole(owner, owner.id, "ADMIN"), "forbidden");
   });
 
   it("changing a coordinator's role clears their hotel and bus designations", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { coordA, hotelA, busA } = await createTwoHotels();
     await people.changeRole(owner, coordA.id, "ADMIN");
     expect((await prisma.hotel.findUniqueOrThrow({ where: { id: hotelA.id } })).coordinatorId).toBeNull();
@@ -217,7 +218,7 @@ describe.skipIf(!hasTestDb)("people service", () => {
   });
 
   it("won't change or deactivate a coordinator who is on a trip", async () => {
-    const owner = await createUser("OWNER");
+    const owner = await staff("OWNER");
     const { coordA, busA } = await createTwoHotels();
     await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id } });
     await expectError(people.changeRole(owner, coordA.id, "CUSTOMER"), "conflict", "personOnTrip");
@@ -225,15 +226,15 @@ describe.skipIf(!hasTestDb)("people service", () => {
   });
 
   it("changing a phone number signs the person out", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { guestA } = await createTwoHotels();
-    const { token } = await createSession(guestA.id);
+    const { token } = await createSession(guestA.id, guestA.eventId);
     await people.updatePerson(admin, guestA.id, { name: guestA.name, phone: "+919811155555" });
     expect(await validateSession(token)).toBeNull();
   });
 
   it("searches by name, phone digits and filters by role", async () => {
-    const admin = await createUser("ADMIN");
+    const admin = await staff("ADMIN");
     const { guestA, coordA } = await createTwoHotels();
     const last4 = guestA.phone.slice(-6);
     expect((await people.listPeople(admin, { q: last4 })).items.map((p) => p.id)).toEqual([guestA.id]);

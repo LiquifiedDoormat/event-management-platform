@@ -22,7 +22,7 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
     <section className="flex flex-col gap-5">
       <div>
         <h1 className="text-3xl font-bold">{t("welcome", { name: user.name })}</h1>
-        {settings.eventName && <p className="text-lg text-muted">{settings.eventName}</p>}
+        {user.eventName && <p className="text-lg text-muted">{user.eventName}</p>}
       </div>
 
       {!hotel ? (
