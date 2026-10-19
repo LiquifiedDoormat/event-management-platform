@@ -15,7 +15,7 @@ import {
 import { loadScope } from "@/server/policies/scope";
 import { AppError, conflict, forbidden, isUniqueViolation, notFound } from "@/server/errors";
 import { audit } from "./audit";
-import { issueSetupCode } from "./auth";
+import { clearPin } from "./auth";
 import { eventOf } from "./context";
 import { OPTIONS_LIMIT, pageArgs, toPage } from "./pagination";
 
@@ -143,7 +143,6 @@ export async function getPerson(actor: Actor, id: string) {
       createdAt: true,
       updatedAt: true,
       pinHash: true,
-      pinSetupExpiresAt: true,
       pinLockedUntil: true,
       memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } },
       coordinatedHotels: { where: { eventId }, select: { id: true, name: true } },
@@ -155,7 +154,7 @@ export async function getPerson(actor: Actor, id: string) {
     },
   });
   if (!person) throw notFound();
-  const { pinHash, pinSetupExpiresAt, pinLockedUntil, ...rest } = shape(person);
+  const { pinHash, pinLockedUntil, ...rest } = shape(person);
   const result = {
     ...rest,
     hotelId: rest.hotel?.id ?? null,
@@ -163,7 +162,6 @@ export async function getPerson(actor: Actor, id: string) {
     pin: PRIVILEGED.includes(person.role)
       ? {
           isSet: Boolean(pinHash),
-          setupPending: Boolean(pinSetupExpiresAt && pinSetupExpiresAt > new Date()),
           lockedUntil: pinLockedUntil && pinLockedUntil > new Date() ? pinLockedUntil : null,
         }
       : null,
@@ -173,12 +171,12 @@ export async function getPerson(actor: Actor, id: string) {
   return result;
 }
 
-export type CreatePersonResult = { id: string; setupCode?: string; addedExisting?: boolean };
+export type CreatePersonResult = { id: string; addedExisting?: boolean };
 
 /**
  * Creates an account (or registers an existing attendee/coordinator for the
- * current event). Admin/Coordinator accounts get a one-time setup code, shown
- * once to the creator, to set their PIN at first sign-in.
+ * current event). Admin/Coordinator accounts start without a PIN and choose one
+ * at their first sign-in.
  */
 export async function createPerson(actor: Actor, input: PersonCreateInput): Promise<CreatePersonResult> {
   if (!assignableRoles(actor).includes(input.role)) throw forbidden();
@@ -204,9 +202,8 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
       data: { name: input.name, phone: input.phone, role: input.role, ...(member ? { memberships: { create: { eventId, hotelId } } } : {}) },
       select: { id: true },
     });
-    const setupCode = PRIVILEGED.includes(input.role) ? await issueSetupCode(tx, user.id) : undefined;
     await audit(tx, actor, "person.create", "User", user.id, { role: input.role, eventId: member ? eventId : null, hotelId });
-    return { id: user.id, setupCode };
+    return { id: user.id };
   });
 }
 
@@ -264,7 +261,7 @@ export async function changeRole(actor: Actor, id: string, role: Role) {
     }
     await tx.user.update({ where: { id }, data: { role } });
     // Attendees have no PIN; new privileged roles must set one with a setup code.
-    if (role === "CUSTOMER") await tx.user.update({ where: { id }, data: { pinHash: null, pinSetupCodeHash: null, pinSetupExpiresAt: null } });
+    if (role === "CUSTOMER") await tx.user.update({ where: { id }, data: { pinHash: null } });
     await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await audit(tx, actor, "person.changeRole", "User", id, { from: target.role, to: role });
   });
@@ -287,17 +284,15 @@ export async function setPersonStatus(actor: Actor, id: string, status: AccountS
 }
 
 /**
- * Forgotten PIN: an authorized admin issues a new one-time setup code (returned
- * once, never stored in clear). The old PIN stops working and the person is
- * signed out everywhere until they set a new PIN.
+ * Forgotten PIN: an authorized admin removes the PIN. The person is signed out
+ * everywhere and chooses a new PIN at their next sign-in.
  */
-export async function resetPin(actor: Actor, id: string): Promise<string> {
+export async function resetPin(actor: Actor, id: string): Promise<void> {
   return prisma.$transaction(async (tx) => {
     const target = await findInEvent(tx, id, eventOf(actor));
     if (!canResetPin(actor, target)) throw forbidden();
-    const code = await issueSetupCode(tx, id);
+    await clearPin(tx, id);
     await audit(tx, actor, "person.resetPin", "User", id);
-    return code;
   });
 }
 

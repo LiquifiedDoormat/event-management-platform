@@ -11,14 +11,14 @@
 - `.env` and `.env.*` are git-ignored; `.env.example` holds placeholders only.
 - `NEXT_PUBLIC_*` variables reach the browser. Only the (optional) restricted Google Maps browser key belongs there.
 - The local Docker database password comes from `.env`. The CI workflow uses a throwaway `ci:ci` database that exists only inside the job's container.
-- Never log PINs, setup codes, session tokens or full phone numbers (use `maskPhone`). The Owner CLI prints a setup code once, to the operator's terminal.
+- Never log PINs, session tokens or full phone numbers (use `maskPhone`).
 
 ## Authentication (Phase 8: no SMS/OTP)
 
 | Concern | Implementation |
 | --- | --- |
 | Staff sign-in | Owner/Admin/Coordinator: phone + 6-digit PIN (`src/server/services/auth.ts`). PINs hashed with scrypt (N=16384, r=8, p=1, 16-byte salt; `src/lib/auth/pin.ts`); never stored or logged in clear. Weak PINs (one repeated digit, straight runs) refused. |
-| First PIN / reset | Requires a **one-time setup code** (10 random characters, SHA-256 stored, 7-day expiry, single use) issued by an authorized admin (Owner → Admin/Coordinator; Admin → Coordinator) or, for Owners, by `npm run owner:create -- --reset-pin` (needs DB access). Issuing a code clears the PIN and revokes all sessions. Nobody can set a PIN for another account by knowing the phone number. |
+| First PIN / reset | The sign-in page asks for the phone number first; if that Owner/Admin/Coordinator account has **no PIN yet**, the person chooses one there (owner decision 2026-10-19: no setup code). Only one request can set it (conditional update on `pinHash IS NULL`); it is audit-logged (`auth.pinSet`) and still needs event access. A reset (Owner → Admin/Coordinator; Admin → Coordinator; Owner via `npm run owner:create -- --reset-pin`) clears the PIN and lockout and revokes all sessions. Attendee and unknown numbers get the same "enter PIN" answer, so the check does not reveal which numbers are staff without a PIN. |
 | Brute force | Per-account lockout: 5 wrong PINs → 15 min lock (audited). Rate limits (PostgreSQL, hashed keys): 10/15 min per phone, 60/15 min per IP for PIN and setup attempts. |
 | Attendee sign-in | Phone number registered (EventMember) for the chosen active event; no PIN or code. Rate limits: 10/15 min per phone, 120/15 min per IP. Attendee sessions are read-only by role. |
 | Enumeration | All failures return the same `invalid_credentials` (unknown number, wrong PIN, no PIN yet, wrong event for attendees). Only a correct PIN can reveal "not registered for this event". Lockout responses can reveal that a number has a privileged account after 5 failures. |
@@ -31,7 +31,7 @@
 
 - **6-digit PIN** = 1,000,000 combinations. Lockout + rate limits make online guessing slow (≈ 480 guesses/day per account), but a PIN is weaker than a strong password and can be shoulder-surfed. Mitigations: weak-PIN rejection, lockout alerts in the audit log, admin resets.
 - **Attendee impersonation:** anyone who knows an attendee's phone number and event can view that attendee's read-only page: their name, hotel, its coordinator's contact, their buses and stops. They cannot change anything or see other attendees. Accepted by the project owner to keep attendee sign-in simple (no codes, no SMS). Stronger options if needed later: per-person codes or SMS (cost).
-- **Setup codes** are as sensitive as a temporary password until used; hand them over privately.
+- **Unclaimed accounts (accepted risk):** while an Admin/Coordinator account has no PIN (new, or just reset), anyone who knows that phone number can choose its PIN and sign in as them. Mitigations: ask people to sign in and set their PIN immediately after being added or reset; check People → PIN status ("No PIN yet"); review `auth.pinSet` in the audit log — if the real person can't sign in, reset the PIN and revoke the intruder's sessions. Rate limits apply.
 
 ## Permission matrix (implemented in `src/server/policies/index.ts`)
 
@@ -47,7 +47,7 @@
 | Change roles; platform settings; audit log | ✅ | — | — | — |
 | Create / edit events (any event); switch events | ✅ | ✅ | switch between own events only | — |
 | Deactivate / reactivate events | ✅ | — | — | — |
-| Reset PIN (issue setup code) | Admins, Coordinators | Coordinators | — | — |
+| Reset PIN (clear it; chosen again at next sign-in) | Admins, Coordinators | Coordinators | — | — |
 | Search attendees of own hotel(s) in current event | ✅ (People) | ✅ (People) | ✅ | — |
 | Start/end trips | ✅ | ✅ | own designated buses | — |
 | Change bus status | ✅ (correction) | ✅ (correction) | own active trip | — |

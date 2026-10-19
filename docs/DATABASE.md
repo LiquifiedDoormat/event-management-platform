@@ -6,7 +6,7 @@ PostgreSQL 17 (local: Docker; production: a managed service such as Neon or Supa
 
 | Model | Purpose | Key constraints |
 | --- | --- | --- |
-| `User` | Every account (Owner, Admin, Coordinator, Customer), one per phone. PIN fields: `pinHash` (scrypt), `pinSetupCodeHash`/`pinSetupExpiresAt` (one-time code), `failedPinAttempts`, `pinLockedUntil`. | `phone` unique, E.164 CHECK; `pinSetupCodeHash` unique; index `(role,status)`, `name` |
+| `User` | Every account (Owner, Admin, Coordinator, Customer), one per phone. PIN fields: `pinHash` (scrypt; null = chooses a PIN at next sign-in), `failedPinAttempts`, `pinLockedUntil`. | `phone` unique, E.164 CHECK; index `(role,status)`, `name` |
 | `Event` | An independent event: name, dates, active flag. | dates CHECK; index `(isActive,name)` |
 | `EventMember` | Attendee/coordinator registration for an event; `hotelId` = attendee's hotel in that event. | unique `(eventId,userId)`; index `userId`, `hotelId` |
 | `Hotel` | Belongs to one event (`eventId`); address, coordinates, notes, active flag. | unique `(eventId, coordinatorId)` (a coordinator designates at most one hotel per event); coords CHECK |
@@ -60,3 +60,7 @@ Hand-ordered for safety on existing data: creates `Event`/`EventMember`, adds nu
 ## Migration `20261019070000_drop_event_attendee_code`
 
 Drops the optional `Event.attendeeCodeHash` added in the previous migration (attendee event codes were removed before release). Never deployed to production.
+
+## Migration `20261019080000_drop_pin_setup_code`
+
+Drops `User.pinSetupCodeHash` and `User.pinSetupExpiresAt` (and the unique index): staff now choose their first PIN at sign-in when `pinHash` is null. Never deployed to production.

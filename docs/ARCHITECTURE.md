@@ -55,7 +55,7 @@ Phone browser ──HTTPS──► Next.js (Vercel, stateless)
 | --- | --- | --- |
 | Framework | Next.js 16 App Router, TypeScript strict | Required stack; one deployable. `cacheComponents` is left off: almost every page is per-user and dynamic. |
 | ORM | Prisma 7 + `@prisma/adapter-pg` | Required stack; Prisma 7 uses driver adapters and `prisma.config.ts`. |
-| Sign-in | Phone + 6-digit PIN for Owner/Admin/Coordinator (scrypt; setup codes from admins); phone number + event for attendees | Zero recurring cost (no SMS/OTP provider). Trade-offs in SECURITY.md. |
+| Sign-in | Phone + 6-digit PIN for Owner/Admin/Coordinator (scrypt; first PIN chosen at first sign-in); phone number + event for attendees | Zero recurring cost (no SMS/OTP provider). Trade-offs in SECURITY.md. |
 | Events | `Event` table; hotels belong to an event; `EventMember` holds attendee/coordinator registration and the attendee's hotel per event; session stores the selected event | Multiple independent events; one account per phone can attend several events. Owner/Admin access all events. |
 | Sessions | Own `Session` table; random 256-bit token in an HttpOnly, Secure, SameSite=Lax cookie; only the SHA-256 hash is stored | Persistent login, instant revocation on sign-out or deactivation, no secrets in localStorage. |
 | Live updates | Polling `GET /api/buses/[id]/live` (20 s during a trip, 60 s idle, visible pages only) | No paid realtime service. Simple; cost scales with viewers × poll rate (see DEPLOYMENT.md › Cost review). |

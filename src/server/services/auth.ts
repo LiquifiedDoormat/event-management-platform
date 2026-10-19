@@ -2,15 +2,14 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma, Role } from "@/generated/prisma/client";
 import { createSession, revokeSession, type SessionUser } from "@/lib/auth/session";
-import { hashPin, hashSetupCode, isWeakPin, newSetupCode, PIN_PATTERN, SETUP_CODE_DAYS, verifyPin } from "@/lib/auth/pin";
+import { hashPin, isWeakPin, PIN_PATTERN, verifyPin } from "@/lib/auth/pin";
 import { rateLimit, resetRateLimit } from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/utils/phone";
-import { safeEqual } from "@/lib/utils/crypto";
 
 // Sign-in without paid SMS:
-// - Owner/Admin/Coordinator: phone + 6-digit PIN. The first PIN (and any reset)
-//   needs a one-time setup code issued by an authorized admin, so nobody can set
-//   a PIN on someone else's account just by knowing their phone number.
+// - Owner/Admin/Coordinator: phone + 6-digit PIN. An account without a PIN
+//   (new, or reset by an admin) chooses one at its next sign-in with the phone
+//   number only (owner decision; risk documented in SECURITY.md).
 // - Attendees: registered phone number + event.
 //   Attendee sessions are read-only by role (see policies).
 // Every path chooses an event; access to it is checked here and on every request.
@@ -105,10 +104,28 @@ async function resolveLoginEvent(user: { id: string; role: Role }, eventId: stri
   return false;
 }
 
-/** First sign-in or after a reset: phone + one-time setup code + new PIN. */
+/**
+ * Staff sign-in step 1: does this number need to choose a PIN? Only an active
+ * Owner/Admin/Coordinator account without a PIN (new, or reset by an admin)
+ * gets "needs_pin"; everything else — including unknown numbers — gets "enter_pin",
+ * so the answer only reveals accounts that are waiting for their first PIN.
+ */
+export async function pinStatus(input: { phone: string; ip: string }): Promise<{ status: "enter_pin" | "needs_pin" | "invalid" } | { status: "rate_limited"; retryAfterSeconds: number }> {
+  const phone = normalizePhone(input.phone);
+  if (!phone) return { status: "invalid" };
+  const limit = await limited("pin", phone, input.ip);
+  if (limit) return limit;
+  const user = await prisma.user.findFirst({ where: { phone, status: "ACTIVE", role: { in: PRIVILEGED } }, select: { pinHash: true } });
+  return { status: user && !user.pinHash ? "needs_pin" : "enter_pin" };
+}
+
+/**
+ * First sign-in, or after an admin reset: choose a PIN with the phone number
+ * only. Allowed only while the account has no PIN. Residual risk (documented
+ * in SECURITY.md): until the person sets it, anyone who knows their number could.
+ */
 export async function setupPin(input: {
   phone: string;
-  setupCode: string;
   pin: string;
   pinConfirm: string;
   eventId: string | null;
@@ -116,7 +133,7 @@ export async function setupPin(input: {
   userAgent?: string | null;
 }): Promise<LoginResult> {
   const phone = normalizePhone(input.phone);
-  if (!phone || input.setupCode.trim().length < 6) return { status: "invalid" };
+  if (!phone) return { status: "invalid" };
   const limit = await limited("pin", phone, input.ip);
   if (limit) return limit;
   if (!PIN_PATTERN.test(input.pin)) return { status: "invalid" };
@@ -124,22 +141,19 @@ export async function setupPin(input: {
   if (isWeakPin(input.pin)) return { status: "weak_pin" };
 
   const user = await prisma.user.findFirst({
-    where: { phone, status: "ACTIVE", role: { in: PRIVILEGED } },
-    select: { id: true, role: true, preferredLocale: true, pinSetupCodeHash: true, pinSetupExpiresAt: true },
+    where: { phone, status: "ACTIVE", role: { in: PRIVILEGED }, pinHash: null },
+    select: { id: true, role: true, preferredLocale: true },
   });
-  const valid =
-    user?.pinSetupCodeHash &&
-    user.pinSetupExpiresAt &&
-    user.pinSetupExpiresAt > new Date() &&
-    safeEqual(user.pinSetupCodeHash, hashSetupCode(input.setupCode));
-  if (!user || !valid) return { status: "invalid" };
+  if (!user) return { status: "invalid" };
 
   const eventId = await resolveLoginEvent(user, input.eventId);
   if (eventId === false) return { status: "no_event_access" };
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { pinHash: await hashPin(input.pin), pinSetupCodeHash: null, pinSetupExpiresAt: null, failedPinAttempts: 0, pinLockedUntil: null },
+  // Conditional update: if two requests race, only the first sets the PIN.
+  const updated = await prisma.user.updateMany({
+    where: { id: user.id, pinHash: null },
+    data: { pinHash: await hashPin(input.pin), failedPinAttempts: 0, pinLockedUntil: null },
   });
+  if (updated.count === 0) return { status: "invalid" };
   await prisma.auditLog.create({ data: { actorId: user.id, action: "auth.pinSet", entityType: "User", entityId: user.id } });
   await resetRateLimit(`pin:phone:${phone}`);
   return startSession(user, eventId, input.userAgent);
@@ -162,24 +176,13 @@ export async function loginAttendee(input: { phone: string; eventId: string; ip:
 }
 
 /**
- * Issues a fresh one-time setup code (shown once to the issuer). Clears the
- * current PIN and signs the account out everywhere, so the next sign-in must
- * set a new PIN. Callers check authorization (canResetPin) first.
+ * PIN reset by an authorized admin (or the Owner CLI): removes the PIN and
+ * signs the person out everywhere. Their next sign-in asks them to choose a new
+ * PIN. Callers check authorization (canResetPin) first.
  */
-export async function issueSetupCode(tx: Prisma.TransactionClient, userId: string): Promise<string> {
-  const code = newSetupCode();
-  await tx.user.update({
-    where: { id: userId },
-    data: {
-      pinHash: null,
-      pinSetupCodeHash: hashSetupCode(code),
-      pinSetupExpiresAt: new Date(Date.now() + SETUP_CODE_DAYS * 86_400_000),
-      failedPinAttempts: 0,
-      pinLockedUntil: null,
-    },
-  });
+export async function clearPin(tx: Prisma.TransactionClient, userId: string) {
+  await tx.user.update({ where: { id: userId }, data: { pinHash: null, failedPinAttempts: 0, pinLockedUntil: null } });
   await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-  return code;
 }
 
 export async function logout(token: string | undefined) {

@@ -50,7 +50,7 @@ Merging to `main` deploys production. Pull requests get preview URLs.
 
 1. Set all Production variables (section 2).
 2. Merge to `main` (or Vercel → Deployments → Redeploy). Check the build log shows `applying migrations (production)`.
-3. Create the first Owner from your computer (prints a one-time setup code; then sign in → "Staff or coordinator" → "First time" and choose a PIN) against the production database, without saving the URL in shell history:
+3. Create the first Owner from your computer (then immediately sign in → "Staff or coordinator" → your number → Continue, and choose a PIN) against the production database, without saving the URL in shell history:
    ```bash
    npx vercel env pull .env.production.local --environment=production
    ```
@@ -63,8 +63,8 @@ Merging to `main` deploys production. Pull requests get preview URLs.
 ## 5. Smoke test (after every production deploy)
 
 1. `https://<domain>/api/health` → `{"ok":true,"database":"up"}`.
-2. Sign in as the Owner (setup code → PIN). Create an event (Events), then open Hotels, Buses, People; switch to Hindi.
-3. Create a test hotel, bus, coordinator (note the setup code) and attendee (your own second phone); sign in as each in a private window.
+2. Sign in as the Owner (choose the PIN). Create an event (Events), then open Hotels, Buses, People; switch to Hindi.
+3. Create a test hotel, bus, coordinator (they choose a PIN at first sign-in) and attendee (your own second phone); sign in as each in a private window.
 4. Coordinator test on a **real phone** (Android Chrome and iPhone Safari): sign in, start trip, change status, start sharing location, walk/drive a few hundred metres with the screen on; watch the attendee page update. Lock the phone for 2 minutes and confirm the attendee page shows "may be out of date". End the trip.
 5. Owner → Audit log shows the changes. Deactivate the test records.
 

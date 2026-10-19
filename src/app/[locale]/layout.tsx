@@ -21,7 +21,7 @@ const devanagari = Noto_Sans_Devanagari({
   display: "swap",
 });
 
-const CLIENT_NAMESPACES = ["common", "auth", "nav", "forms", "errors", "busStatus", "transport", "trip", "pin"] as const;
+const CLIENT_NAMESPACES = ["common", "auth", "nav", "forms", "errors", "busStatus", "transport", "trip"] as const;
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 

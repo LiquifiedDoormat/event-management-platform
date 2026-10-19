@@ -6,13 +6,12 @@ import { setupPin } from "@/server/services/auth";
 
 const Body = z.object({
   phone: z.string().min(1).max(32),
-  setupCode: z.string().min(1).max(20),
   pin: z.string().max(12),
   pinConfirm: z.string().max(12),
   eventId: z.string().max(40).nullable(),
 });
 
-/** First sign-in / after reset: one-time setup code + new PIN. */
+/** First sign-in / after an admin reset: choose a PIN (only while the account has none). */
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return fail("forbidden", 403);
   const body = Body.safeParse(await readJson(request));

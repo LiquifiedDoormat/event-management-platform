@@ -7,7 +7,7 @@ Mobile-first, English/Hindi web app for running event logistics across **multipl
 ## Features
 
 - **Events:** independent events, each with its own hotels, buses, coordinators and attendees; chosen on the sign-in page; Owner/Admin can switch events without signing out.
-- **Sign-in without SMS:** Owner/Admin/Coordinator use phone + 6-digit PIN (first PIN and resets via a one-time setup code from an administrator); attendees use phone number + event. Persistent sessions; sign-out.
+- **Sign-in without SMS:** Owner/Admin/Coordinator use phone + 6-digit PIN (first PIN chosen at first sign-in; forgotten PINs reset by an administrator); attendees use phone number + event. Persistent sessions; sign-out.
 - **Roles:** Owner, Admin, Coordinator, Attendee (read-only), enforced on the server.
 - Hotel, bus (with stops), coordinator and people directories; assignments; audit log.
 - Coordinators: trip controls, large status buttons, GPS sharing from the phone, searchable list of attendees at their hotel.
@@ -59,7 +59,8 @@ The demo PIN exists only in local seed data.
 ## Sign-in model (no SMS, no OTP)
 
 - **Owner/Admin/Coordinator:** phone + 6-digit PIN. PINs are stored as salted scrypt hashes. Easy PINs (111111, 123456, …) are refused; 5 wrong PINs lock the account for 15 minutes; attempts are also rate-limited per phone and per network.
-- **First sign-in / forgotten PIN:** an authorized administrator issues a **one-time setup code** (Owner → Admins and Coordinators; Admin → Coordinators). It is shown once, expires in 7 days, and lets the person choose a new PIN on the sign-in page ("Staff or coordinator" → "First time"). Hand it over in person or by private message.
+- **First sign-in:** "Staff or coordinator" → enter the phone number → **Continue**. If the account has no PIN yet, the person chooses one (twice); otherwise they enter their PIN.
+- **Forgotten PIN:** an authorized administrator resets it (Owner → Admins and Coordinators; Admin → Coordinators): People → person → **Reset PIN**. The person then signs in and chooses a new one. Until they do, anyone with their number could choose it — so do it right away (see SECURITY.md).
 - **Owner:** created, and recovered if the PIN is forgotten, with the CLI (needs database access):
   ```bash
   npm run owner:create -- --phone "98765 43210" --name "Full Name"
@@ -115,7 +116,7 @@ All configuration lives in `.env` (git-ignored). `.env.example` lists every vari
 | `npm run dev` | Development server |
 | `npm run check` | Lint + type-check + all tests |
 | `npm run test:unit` / `npm run test:integration` | Unit tests / integration tests (need `TEST_DATABASE_URL`) |
-| `npm run owner:create -- …` | Create the first Owner or reset an Owner PIN (prints a setup code) |
+| `npm run owner:create -- …` | Create the first Owner or reset an Owner PIN (you then choose the PIN at sign-in) |
 | `npm run ops:prune` | Data-retention cleanup |
 | `npm run vercel-build` | Vercel build: migrations (production only) + `next build` |
 | `npx tsx scripts/loadtest-seed.ts` | Load-test data + session tokens (local/staging DBs only) |

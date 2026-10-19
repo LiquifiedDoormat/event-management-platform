@@ -7,16 +7,16 @@
 // Options:
 //   --allow-additional   create another Owner even if one already exists
 //   --promote-existing   promote an existing account with this phone to Owner
-//   --reset-pin          issue a new setup code for an existing Owner (forgotten PIN)
+//   --reset-pin          remove an existing Owner's PIN (forgotten PIN)
 //
-// Prints a one-time setup code; the Owner uses it on the sign-in page
-// ("Staff or coordinator" → "First time") to choose their 6-digit PIN.
+// The Owner then signs in with their phone number ("Staff or coordinator") and
+// is asked to choose a 6-digit PIN. Do this promptly: until the PIN is set,
+// anyone who knows the number could set it (see docs/SECURITY.md).
 import "dotenv/config";
 import { parseArgs } from "node:util";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { maskPhone, normalizePhone } from "../src/lib/utils/phone";
-import { hashSetupCode, newSetupCode, SETUP_CODE_DAYS } from "../src/lib/auth/pin";
 
 const { values } = parseArgs({
   options: {
@@ -41,28 +41,21 @@ if (!process.env.DATABASE_URL) fail("DATABASE_URL is not set");
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
-const setupCode = newSetupCode();
-const setupData = {
-  pinHash: null,
-  pinSetupCodeHash: hashSetupCode(setupCode),
-  pinSetupExpiresAt: new Date(Date.now() + SETUP_CODE_DAYS * 86_400_000),
-  failedPinAttempts: 0,
-  pinLockedUntil: null,
-};
+const noPin = { pinHash: null, failedPinAttempts: 0, pinLockedUntil: null };
 
-function printCode(who: string) {
-  console.log(`${who} (${maskPhone(phone!)}). One-time setup code (shown once, expires in ${SETUP_CODE_DAYS} days):\n\n    ${setupCode}\n\nSign in → "Staff or coordinator" → "First time" → enter the phone number, this code and a new 6-digit PIN.`);
+function done(who: string) {
+  console.log(`${who} (${maskPhone(phone!)}). Now sign in → "Staff or coordinator" → enter this phone number → choose a 6-digit PIN. Do it right away.`);
 }
 
 async function resetOwnerPin() {
   await prisma.$transaction(async (tx) => {
     const owner = await tx.user.findFirst({ where: { phone: phone!, role: "OWNER" }, select: { id: true } });
     if (!owner) fail(`no Owner account with ${maskPhone(phone!)}`);
-    await tx.user.update({ where: { id: owner!.id }, data: setupData });
+    await tx.user.update({ where: { id: owner!.id }, data: noPin });
     await tx.session.updateMany({ where: { userId: owner!.id, revokedAt: null }, data: { revokedAt: new Date() } });
     await tx.auditLog.create({ data: { actorId: null, action: "owner.resetPin", entityType: "User", entityId: owner!.id, metadata: { via: "scripts/create-owner.ts" } } });
   });
-  printCode("Owner PIN reset");
+  done("Owner PIN reset");
 }
 
 async function main() {
@@ -79,12 +72,12 @@ async function main() {
       if (!values["promote-existing"]) {
         fail(`an account with ${maskPhone(phone!)} already exists (role ${existing.role}). Use --promote-existing.`);
       }
-      await tx.user.update({ where: { id: existing.id }, data: { role: "OWNER", status: "ACTIVE", name: name!, ...setupData } });
+      await tx.user.update({ where: { id: existing.id }, data: { role: "OWNER", status: "ACTIVE", name: name!, ...noPin } });
       // Force a fresh sign-in so the new role is picked up cleanly.
       await tx.session.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } });
       userId = existing.id;
     } else {
-      userId = (await tx.user.create({ data: { phone: phone!, name: name!, role: "OWNER", ...setupData }, select: { id: true } })).id;
+      userId = (await tx.user.create({ data: { phone: phone!, name: name!, role: "OWNER", ...noPin }, select: { id: true } })).id;
     }
 
     await tx.auditLog.create({
@@ -96,7 +89,7 @@ async function main() {
         metadata: { via: "scripts/create-owner.ts" },
       },
     });
-    printCode(`Owner ready: ${name}`);
+    done(`Owner ready: ${name}`);
   });
 }
 

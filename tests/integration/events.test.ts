@@ -120,30 +120,29 @@ describe.skipIf(!hasTestDb)("event management and switching", () => {
   });
 });
 
-describe.skipIf(!hasTestDb)("PIN resets and setup codes", () => {
+describe.skipIf(!hasTestDb)("PIN resets", () => {
   beforeEach(resetDb);
 
-  it("creating an admin or coordinator returns a one-time setup code; attendees get none", async () => {
+  it("new admins and coordinators start without a PIN (they choose one at first sign-in)", async () => {
     const owner = await staff("OWNER");
     const c = await people.createPerson(owner, personCreateInput.parse({ name: "C", phone: "98111 60001", role: "COORDINATOR" }));
-    expect(c.setupCode).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
-    const a = await people.createPerson(owner, personCreateInput.parse({ name: "A", phone: "98111 60002", role: "CUSTOMER" }));
-    expect(a.setupCode).toBeUndefined();
-    const stored = await prisma.user.findUniqueOrThrow({ where: { id: c.id } });
-    expect(stored.pinSetupCodeHash).not.toContain(c.setupCode!.replace("-", ""));
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: c.id } })).pinHash).toBeNull();
+    expect((await people.getPerson(owner, c.id)).pin).toEqual({ isSet: false, lockedUntil: null });
   });
 
-  it("only authorized staff can reset PINs", async () => {
+  it("only authorized staff can reset PINs; a reset clears the PIN and lockout", async () => {
     const owner = await staff("OWNER");
     const admin = await staff("ADMIN");
     const otherAdmin = await staff("ADMIN");
     const { coordA, guestA } = await createTwoHotels();
-    expect(await people.resetPin(admin, coordA.id)).toMatch(/-/);
+    await prisma.user.update({ where: { id: coordA.id }, data: { pinHash: "scrypt$x", failedPinAttempts: 5, pinLockedUntil: new Date(Date.now() + 60_000) } });
+    await people.resetPin(admin, coordA.id);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: coordA.id } })).toMatchObject({ pinHash: null, failedPinAttempts: 0, pinLockedUntil: null });
     expect((await code(people.resetPin(admin, otherAdmin.id))).code).toBe("forbidden");
     expect((await code(people.resetPin(admin, owner.id))).code).toBe("forbidden");
     expect((await code(people.resetPin(owner, guestA.id))).code).toBe("forbidden");
     expect((await code(people.resetPin(coordA, coordA.id))).code).toBe("forbidden");
-    expect(await people.resetPin(owner, otherAdmin.id)).toMatch(/-/);
+    await people.resetPin(owner, otherAdmin.id);
     expect(await prisma.auditLog.count({ where: { action: "person.resetPin" } })).toBe(2);
   });
 });

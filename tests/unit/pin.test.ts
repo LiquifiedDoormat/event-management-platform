@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashPin, hashSetupCode, isWeakPin, newSetupCode, verifyPin } from "@/lib/auth/pin";
+import { hashPin, isWeakPin, verifyPin } from "@/lib/auth/pin";
 
 describe("PIN hashing", () => {
   it("verifies the right PIN only; hashes are salted", async () => {
@@ -19,10 +19,3 @@ describe("PIN hashing", () => {
   });
 });
 
-describe("setup codes", () => {
-  it("are readable, unambiguous and compared case/format-insensitively", () => {
-    const code = newSetupCode();
-    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/);
-    expect(hashSetupCode(code.toLowerCase().replace("-", " "))).toBe(hashSetupCode(code));
-  });
-});

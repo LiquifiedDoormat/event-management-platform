@@ -26,18 +26,14 @@
     "phoneLabel": "Mobile number",
     "phoneHint": "The number you registered with, e.g. 98765 43210",
     "pinLabel": "6-digit PIN",
-    "setupCodeLabel": "Setup code",
-    "setupCodeHint": "The one-time code your event organiser gave you, e.g. ABCDE-FGH23.",
     "newPinLabel": "Choose a 6-digit PIN",
     "newPinHint": "Avoid easy PINs like 123456 or 111111. Don't share it.",
     "confirmPinLabel": "Type the PIN again",
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "setPinAndSignIn": "Save PIN and sign in",
-    "firstTime": "First time, or PIN was reset? Use your setup code",
-    "haveAPin": "I already have a PIN",
     "attendeeHelp": "Can't sign in? Ask your hotel coordinator or the event help desk to check your number.",
-    "forgotPin": "Forgot your PIN? Ask an event administrator for a new setup code.",
+    "forgotPin": "Forgot your PIN? Ask an event administrator to reset it, then sign in again and choose a new one.",
     "errors": {
       "invalid_credentials": "Those details didn't match. Check the event, your number and your PIN (or setup code), then try again.",
       "no_event_access": "You're not registered for this event. Choose your event from the list, or ask the organisers.",
@@ -47,7 +43,10 @@
       "network": "No internet connection. Please check your connection and try again.",
       "generic": "Something went wrong. Please try again.",
       "choose_event": "Please choose your event."
-    }
+    },
+    "continue": "Continue",
+    "choosePinIntro": "Welcome! Choose a 6-digit PIN for this account. You'll use it every time you sign in.",
+    "changeNumber": "Use a different number"
   },
   "dashboard": {
     "welcome": "Welcome, {name}",
@@ -277,11 +276,10 @@
     "confirmDeactivate": "Deactivate {name}? They will be signed out and cannot sign in.",
     "pinTitle": "PIN",
     "pinIsSet": "PIN is set.",
-    "pinSetupPending": "Waiting for the person to set a PIN with their setup code.",
-    "pinNotSet": "No PIN yet. Reset to issue a setup code.",
+    "pinNotSet": "No PIN yet. They will choose one at their next sign-in.",
     "pinLocked": "Locked after too many wrong PINs until {time}.",
-    "resetPin": "Reset PIN (new setup code)",
-    "confirmResetPin": "Reset the PIN for {name}? Their current PIN stops working and they are signed out."
+    "resetPin": "Reset PIN",
+    "confirmResetPin": "Reset the PIN for {name}? Their current PIN stops working, they are signed out, and they choose a new PIN at their next sign-in. Ask them to do it right away."
   },
   "transport": {
     "notRunning": "This bus is not running right now.",
@@ -371,7 +369,7 @@
     },
     "actions": {
       "auth": {
-        "pinSet": "PIN set with setup code",
+        "pinSet": "PIN chosen at sign-in",
         "pinLocked": "Account locked after wrong PINs"
       },
       "owner": {
@@ -404,7 +402,7 @@
         "changeRole": "Role changed",
         "activate": "Account reactivated",
         "deactivate": "Account deactivated",
-        "resetPin": "PIN reset (setup code issued)",
+        "resetPin": "PIN reset by staff",
         "addToEvent": "Registered for another event"
       },
       "trip": {
@@ -454,11 +452,6 @@
     "activate": "Reactivate event",
     "deactivateHelp": "Inactive events disappear from the sign-in list. Nothing is deleted.",
     "confirmDeactivate": "Deactivate this event? Attendees and coordinators will no longer be able to sign in to it."
-  },
-  "pin": {
-    "codeIntro": "One-time setup code (shown only once):",
-    "codeHandover": "Give it to the person privately (in person or a private message). They choose \"Staff or coordinator\" → \"First time\" on the sign-in page. It expires in 7 days.",
-    "openPerson": "Open their page"
   },
   "myAttendees": {
     "title": "Attendees at my hotel",

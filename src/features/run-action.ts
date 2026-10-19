@@ -9,8 +9,8 @@ import { fieldErrors, formToObject } from "@/lib/validation/common";
 import { AppError } from "@/server/errors";
 import type { ActionState } from "@/features/admin/action-state";
 
-/** Return a path to redirect, a one-time secret to show, or nothing. */
-export type Handler = (user: SessionUser, data: Record<string, string>) => Promise<string | void | { secret: { code: string; href?: string } }>;
+/** Return a path to redirect to, or nothing. */
+export type Handler = (user: SessionUser, data: Record<string, string>) => Promise<string | void>;
 
 /**
  * Wraps a handler with auth, error mapping and page refresh. If the handler
@@ -31,7 +31,6 @@ export async function run(form: FormData, handler: Handler): Promise<ActionState
     return { status: "error", message: "errors.generic" };
   }
   revalidatePath("/", "layout");
-  if (target && typeof target === "object") return { status: "ok", message: "forms.saved", secret: target.secret };
   if (target) redirect({ href: target, locale: await getLocale() });
   return { status: "ok", message: "forms.saved" };
 }

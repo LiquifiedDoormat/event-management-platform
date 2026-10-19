@@ -5,7 +5,7 @@
 | What | Where |
 | --- | --- |
 | App up + database reachable | `GET /api/health` → `{"ok":true,"database":"up"}` (503 if DB down). Add it to an uptime monitor (e.g. UptimeRobot, every 1–5 min). |
-| Errors and slow requests | Vercel → Project → Logs / Observability. Server logs never contain PINs, setup codes, tokens or full phone numbers. |
+| Errors and slow requests | Vercel → Project → Logs / Observability. Server logs never contain PINs, tokens or full phone numbers. |
 | Maps usage and cost | Google Cloud → Google Maps Platform → Metrics; Billing → Budgets |
 | Daily cleanup | Vercel → Project → Settings → Cron Jobs (last run of `/api/cron/prune`) |
 
@@ -18,7 +18,7 @@
 - [ ] Smoke test passed on the production URL (DEPLOYMENT.md §5) the day before.
 - [ ] Every bus has a coordinator; Owner home shows no "needs attention" items.
 - [ ] Coordinators have tested sign-in and location sharing on their own phones, know to keep the trip page open with the screen on, and have a charger/power bank.
-- [ ] Every Admin/Coordinator has set their PIN (People → PIN status) and knows to ask an Admin for a new setup code if they forget it.
+- [ ] Every Admin/Coordinator has set their PIN (People → PIN status) (no account should show "No PIN yet" on event day) and knows to ask an Admin to reset it if they forget it.
 - [ ] Hosting/database plan checked against expected load (DEPLOYMENT.md › Cost review).
 - [ ] Help desk has the Owner/Admin sign-in and knows how to look people up (People → search by name or phone).
 
@@ -26,7 +26,7 @@
 
 **Nobody can sign in**
 1. `/api/health` — is the database up?
-2. Staff: "details didn't match" → wrong PIN or no PIN yet. After 5 wrong PINs the account locks for 15 minutes. Forgotten PIN → an Admin (or the Owner for Admins) opens People → person → **Reset PIN** and gives them the new setup code privately. Owner forgot PIN → `npm run owner:create -- --phone … --reset-pin` with production `DATABASE_URL`.
+2. Staff: "details didn't match" → wrong PIN or no PIN yet. After 5 wrong PINs the account locks for 15 minutes. Forgotten PIN → an Admin (or the Owner for Admins) opens People → person → **Reset PIN**, then the person signs in right away and chooses a new PIN. Owner forgot PIN → `npm run owner:create -- --phone … --reset-pin` with production `DATABASE_URL`.
    Attendees: check they chose the right event, their number is registered for it (People).
 3. "Too many attempts": lockout or rate limits (10 tries/15 min per number; 60 PIN / 120 attendee tries per network). Wait 15 minutes; on shared venue Wi-Fi, ask people to use mobile data.
 4. One person can't sign in: check People → their number is correct and the account is Active.

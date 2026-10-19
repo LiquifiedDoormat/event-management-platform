@@ -20,7 +20,7 @@ The repository's verified state takes precedence over this file. If they disagre
 ## 2. Current Project Status
 
 - **Stage:** Phase 8 implemented and verified locally on `feat/phase-8-events-pin` (2 local commits, not pushed). Phase 7 tooling is in PR #7 (open, CI green, **not merged**). Production never deployed.
-- **Completed (verified locally):** Phases 1–7; Phase 8: events + memberships + migration, PIN sign-in with setup codes/lockout, attendee phone+event sign-in, event isolation across all services, event create/edit/deactivate + server-checked switching, coordinator attendee search, PIN reset UI, Twilio/OTP/Pusher removal, polling live updates, tracking HTTPS/accuracy/signed-out states, docs + cost review.
+- **Completed (verified locally):** Phases 1–7; Phase 8: events + memberships + migration, PIN sign-in (first PIN chosen at sign-in)/lockout, attendee phone+event sign-in, event isolation across all services, event create/edit/deactivate + server-checked switching, coordinator attendee search, PIN reset UI, Twilio/OTP/Pusher removal, polling live updates, tracking HTTPS/accuracy/signed-out states, docs + cost review.
 - **Unverified:** real smartphone GPS; real laptop geolocation (browser pane blocks geolocation); Google Maps with a key; any deployment of Phases 7–8; k6 load test.
 - **Blocked:** deployment needs owner accounts (Neon + Vercel env vars) — Twilio and Pusher are **no longer needed**.
 
@@ -123,7 +123,7 @@ AGENTS.md                       Next.js agent rules (auto-maintained block) + po
 ## 4. Architecture and Data Model
 
 - **Phase 8 model:** `Event` (name, dates, isActive) → `Hotel.eventId` (required) → buses/trips/locations via hotel. `EventMember(eventId,userId,hotelId?)` registers attendees/coordinators per event (attendee hotel lives here; `User.hotelId` removed). Staff (Owner/Admin) aren't members and can access every event. `Session.eventId` = selected event; `validateSession` re-checks membership + active event for non-staff on every request and returns `user.eventId/eventName/hotelId`. Every service scopes by `eventOf(actor)`; cross-event IDs behave as not found. `Hotel` unique `(eventId, coordinatorId)`. `EventConfig.eventName` removed (event name lives on Event).
-- **Auth (Phase 8):** see SECURITY.md › Authentication. PIN = scrypt; setup code = SHA-256, 7 days, single use, issued via `issueSetupCode` (clears PIN, revokes sessions); lockout 5 → 15 min; rate limits 10/15 min per phone. Attendees: phone + event only (owner decision 2026-10-19: no event code). `canResetPin`: Owner→Admin/Coordinator, Admin→Coordinator; Owner via CLI `--reset-pin`.
+- **Auth (Phase 8):** see SECURITY.md › Authentication. PIN = scrypt; staff flow: `pinStatus` (phone → `enter_pin`/`needs_pin`, POST /api/auth/pin-status) then `loginWithPin` or `setupPin` (only when `pinHash` is null; owner decision 2026-10-19: no setup codes, migration `20261019080000_drop_pin_setup_code`); reset = `clearPin` (clears PIN/lockout, revokes sessions); lockout 5 → 15 min; rate limits 10/15 min per phone. Attendees: phone + event only (owner decision 2026-10-19: no event code). `canResetPin`: Owner→Admin/Coordinator, Admin→Coordinator; Owner via CLI `--reset-pin`.
 
 - Full details: `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `docs/SECURITY.md` (has the permission matrix).
 - **Entities:** User, Hotel, Bus, BusStop, Trip, BusLocation (latest per bus), LocationPoint (sampled history), BusStatusEvent, Session, RateLimitBucket, AuditLog, EventConfig (single row). No schema changes in Phase 2.
@@ -144,7 +144,7 @@ AGENTS.md                       Next.js agent rules (auto-maintained block) + po
 | Prisma schema, migration, constraints, seed | Verified | Phase 1 (migrate, manual SQL constraint tests, idempotent seed) |
 | Health endpoint, security headers, env validation | Verified | curl + unit tests |
 | Phone normalization | Verified | Unit tests |
-| PIN sign-in, setup codes, lockout, rate limits | Verified | 9 integration tests (`auth.test.ts`) + 3 unit (`pin.test.ts`) + API checks on dev server (Phase 8) |
+| PIN sign-in, first-PIN choice, resets, lockout, rate limits | Verified | 10 integration tests (`auth.test.ts`) + 2 unit (`pin.test.ts`) + API checks on dev server (Phase 8) |
 | Attendee sign-in (phone + event + optional code) | Verified | 5 integration tests + API checks (right/wrong event) |
 | Event isolation, switching, event admin, PIN reset, coordinator search, attendee read-only | Verified | 12 integration tests (`events.test.ts`) + curl checks (cross-event URL → 404, coordinator list scoped) |
 | Generic responses (no enumeration) | Verified | Integration test: unknown/inactive numbers get `sent`, no code issued |
@@ -180,17 +180,17 @@ AGENTS.md                       Next.js agent rules (auto-maintained block) + po
 
 - [x] Phases 1–7 (Phase 7 in PR #7, unmerged)
 - [x] Phase 8 — zero-cost auth, multi-event, coordinator search, location audit (local verification only)
-- [ ] **Release** (next): review PR #7 + Phase 8 together; owner creates Neon DB + Vercel env vars (no Twilio/Pusher); merge combined changes; first production deploy (migrations run automatically); `owner:create` → setup code → PIN; create events; smoke test (DEPLOYMENT.md §5)
+- [ ] **Release** (next): review PR #7 + Phase 8 together; owner creates Neon DB + Vercel env vars (no Twilio/Pusher); merge combined changes; first production deploy (migrations run automatically); `owner:create` → sign in at once and choose PIN; create events; smoke test (DEPLOYMENT.md §5)
 - [ ] Real-device GPS test (Android Chrome, iPhone Safari) + laptop fallback test on the HTTPS deployment
 - [ ] Staging k6 run (OPERATIONS.md) and decide hosting plan vs. load (DEPLOYMENT.md › Cost review)
 - [ ] Optional: longer attendee poll interval if free-tier limits bite
 
 ## 7. Current Development State
 
-- **Last completed task:** Phase 8 implementation, docs and checks.
+- **Last completed task:** Phase 8 + owner follow-ups (no attendee event code; phone-first staff sign-in, first PIN chosen at sign-in, no setup codes).
 - **In progress:** nothing (awaiting owner decision on PR strategy / push).
 - **Next recommended task:** push `feat/phase-8-events-pin` and open a PR into `feat/phase-7-deploy` (stacked on PR #7) for review; then release per §6.
-- **Check results (2026-10-19, local, dev server stopped):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 118/118 (15 files), `npm run build` ✅, `npm run build` with **no env vars** ✅. Migration verified on empty DB, populated dev DB and test DB (no drift). API checks against dev server: attendee/PIN sign-in per event, wrong-event refusal, cross-event 404s, coordinator list scoping — all as expected.
+- **Check results (2026-10-19, local, dev server stopped):** `npm run lint` ✅, `npm run typecheck` ✅, `npm test` ✅ 117/117 (15 files), `npm run build` ✅ (re-run after the phone-first PIN change). Migration verified on empty DB, populated dev DB and test DB (no drift). API checks against dev server: attendee/PIN sign-in per event, wrong-event refusal, cross-event 404s, coordinator list scoping — all as expected.
 - **CI:** PR #7 green; Phase 8 CI not yet run (branch not pushed).
 
 ## 8. Setup and Execution
@@ -222,7 +222,7 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
 
 ## 10. Known Issues and Risks
 
-- **Residual security risks (accepted, see SECURITY.md):** 6-digit PIN strength (mitigated by lockout/rate limits/weak-PIN rejection); attendee impersonation by phone number + event (owner accepted; no event code) — read-only, own-hotel data only; setup codes must be handed over privately.
+- **Residual security risks (accepted, see SECURITY.md):** 6-digit PIN strength (mitigated by lockout/rate limits/weak-PIN rejection); attendee impersonation by phone number + event (owner accepted; no event code) — read-only, own-hotel data only; accounts without a PIN (new or reset) can be claimed by anyone knowing the number until the person sets it (owner accepted 2026-10-19; mitigated by prompt setup, PIN status in People, `auth.pinSet` audit).
 - **Cost assumptions unverified:** Vercel Hobby non-commercial terms and invocation limits; Neon free compute; polling load at 2,000 viewers likely exceeds free tiers (DEPLOYMENT.md › Cost review). Not measured (no staging/k6 yet).
 - **Release hazard:** merging PR #7 (Phase 7) to `main` **without** Phase 8 would deploy code that still requires Twilio for sign-in. Release Phase 7 and 8 together.
 - **Location audit:** server ingest/validation/ordering/event scoping verified by tests; client flow verified with a simulated GPS shim (Phase 5) and the permission-denied path; HTTPS check, >100 m accuracy warning and signed-out handling added but **not exercised on real hardware**. Background tracking on mobile browsers is not reliable (documented).
@@ -294,15 +294,22 @@ Local demo accounts after seeding (fake numbers): admin `9999900002`; coordinato
   - Migration `20261019060000_events_membership_pin` (hand-ordered backfill; see DATABASE.md).
   - Added: `src/lib/auth/pin.ts`, `src/lib/api/auth-response.ts`, routes `api/auth/{pin,setup-pin,attendee}`, `src/server/services/{events,context}.ts`, pages `[locale]/events`, `[locale]/events/[id]`, `[locale]/coordinator/people`, `components/{layout/EventSwitcher,events/EventFields}.tsx`, `features/events/actions.ts`, tests `tests/integration/events.test.ts`, `tests/unit/pin.test.ts`.
   - Rewritten: `services/{auth,people}.ts`, `components/auth/LoginForm.tsx`, `hooks/useBusLive.ts` (polling only), `prisma/seed.ts` (two events, demo PIN 246810), `tests/integration/{auth,helpers}.ts`, README, `.env.example`.
-  - Changed: session (event context), policies (`canResetPin`, event actions), scope/hotels/buses/transport/trips/dashboard/settings (event scoping), create-owner (setup code, `--reset-pin`), loadtest-seed, TripControls/useGeolocationSharing (HTTPS, accuracy, signed-out), CSP (no Pusher), CI env, SECURITY/ARCHITECTURE/DATABASE/DEPLOYMENT/OPERATIONS.
+  - Changed: session (event context), policies (`canResetPin`, event actions), scope/hotels/buses/transport/trips/dashboard/settings (event scoping), create-owner (`--reset-pin` clears the PIN), loadtest-seed, TripControls/useGeolocationSharing (HTTPS, accuracy, signed-out), CSP (no Pusher), CI env, SECURITY/ARCHITECTURE/DATABASE/DEPLOYMENT/OPERATIONS.
   - Removed: `src/lib/auth/otp/*`, `api/auth/otp/*`, `src/lib/realtime/publisher.ts`, `api/realtime/auth`, `tests/unit/realtime.test.ts`, deps `pusher`, `pusher-js`; env `OTP_PROVIDER`, `TWILIO_*`, `PUSHER_*`.
 
 - **2026-10-19 — Attendee event code removed** (owner request): dropped `Event.attendeeCodeHash` (new migration `20261019070000_drop_event_attendee_code`), the login field, event form fields, service logic, tests and docs. Attendees sign in with phone number + event only.
+
+- **2026-10-19 — Phone-first staff sign-in, setup codes removed** (owner request: "just ask for their phone number, check if they have set a password or not; if no then ask to set a password"):
+  - Migration `20261019080000_drop_pin_setup_code` drops `User.pinSetupCodeHash`/`pinSetupExpiresAt`.
+  - Added `pinStatus` + route `POST /api/auth/pin-status` (`enter_pin`/`needs_pin`; attendees/unknown numbers answer `enter_pin`). `setupPin` no longer takes a code; it works only while `pinHash` is null (conditional update), audit `auth.pinSet`.
+  - Reset PIN (`clearPin`) clears PIN + lockout + sessions; no code shown. Removed secret plumbing from `ActionForm`/`run-action`/`action-state`; `create-owner` prints sign-in instructions only.
+  - LoginForm staff tab: phone → Continue → PIN, or choose PIN twice; "Use a different number". Strings updated EN/HI; `pin` client namespace removed.
+  - Accepted risk documented in SECURITY.md (unclaimed accounts).
 
 ## 12. Instructions for the Next AI
 
 1. Read this file, `docs/SECURITY.md` (auth model + residual risks), `docs/DEPLOYMENT.md` (incl. cost review), then `docs/MASTER_PROMPT.md` (original brief; Phase 8 replaced its SMS-OTP and Pusher parts).
 2. `git status`, `git log --oneline -10`, `git branch -a`, `gh pr list` — check PR #7 and whether a Phase 8 PR exists/merged.
 3. Verify: `npm install && npm run db:up && npm run db:migrate && npm run db:seed && npm run check && npm run build` (stop the dev server first). Sign in locally with the demo table in README.
-4. Constraints: no paid providers without owner approval; never commit `.env`/secrets/setup codes; never force-push; never reset/drop production; every query scoped with `eventOf(actor)`; attendees read-only; don't merge or deploy without explicit owner authorization; release Phase 7 + 8 together.
+4. Constraints: no paid providers without owner approval; never commit `.env`/secrets/PINs; never force-push; never reset/drop production; every query scoped with `eventOf(actor)`; attendees read-only; don't merge or deploy without explicit owner authorization; release Phase 7 + 8 together.
 5. **Next concrete action:** with owner approval, push `feat/phase-8-events-pin`, open a PR into `feat/phase-7-deploy`, let CI run, then follow the release checklist in §6.

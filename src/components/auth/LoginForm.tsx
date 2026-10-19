@@ -4,14 +4,16 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 
-type Mode = "attendee" | "staff" | "setup";
+type Tab = "attendee" | "staff";
+/** Staff flow: phone first, then either enter the PIN or choose one. */
+type StaffStep = "phone" | "pin" | "setup";
 type ErrorKey = "invalid_credentials" | "no_event_access" | "weak_pin" | "pin_mismatch" | "rate_limited" | "network" | "generic" | "choose_event";
 const KNOWN = new Set<string>(["invalid_credentials", "no_event_access", "weak_pin", "pin_mismatch", "rate_limited"]);
 
-async function post(url: string, body: unknown): Promise<{ ok: true; data: { redirectTo: string; locale: "en" | "hi" } } | { ok: false; error: ErrorKey }> {
+async function post<T>(url: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; error: ErrorKey }> {
   try {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const json = (await res.json().catch(() => null)) as { ok: boolean; data?: { redirectTo: string; locale: "en" | "hi" }; error?: { code: string } } | null;
+    const json = (await res.json().catch(() => null)) as { ok: boolean; data?: T; error?: { code: string } } | null;
     if (json?.ok && json.data) return { ok: true, data: json.data };
     const code = json?.error?.code;
     return { ok: false, error: code && KNOWN.has(code) ? (code as ErrorKey) : "generic" };
@@ -19,6 +21,8 @@ async function post(url: string, body: unknown): Promise<{ ok: true; data: { red
     return { ok: false, error: "network" };
   }
 }
+
+type Session = { redirectTo: string; locale: "en" | "hi" };
 
 const inputClass = "w-full min-h-14 rounded-lg border-2 border-line bg-surface px-4 text-xl tracking-wide focus:border-brand outline-none";
 const primary = "w-full min-h-14 rounded-lg bg-brand text-brand-ink text-lg font-semibold disabled:opacity-60";
@@ -39,35 +43,39 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 const digitsOnly = (v: string) => v.replace(/\D/g, "").slice(0, 6);
 
+function PinInput({ id, value, onChange, autoComplete }: { id: string; value: string; onChange: (v: string) => void; autoComplete: string }) {
+  return (
+    <input
+      id={id}
+      type="password"
+      inputMode="numeric"
+      autoComplete={autoComplete}
+      maxLength={6}
+      required
+      value={value}
+      onChange={(e) => onChange(digitsOnly(e.target.value))}
+      className={`${inputClass} tracking-[0.5em]`}
+    />
+  );
+}
+
 /**
- * Sign-in without SMS. Attendees: event + phone.
- * Staff/coordinators: event + phone + PIN; first time or after a reset: setup code + new PIN.
+ * Sign-in without SMS. Attendees: event + phone number.
+ * Staff/coordinators: event + phone → enter PIN, or choose one if the account has none yet.
  */
 export function LoginForm({ events }: { events: { id: string; name: string }[] }) {
   const t = useTranslations("auth");
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("attendee");
+  const [tab, setTab] = useState<Tab>("attendee");
+  const [step, setStep] = useState<StaffStep>("phone");
   const [eventId, setEventId] = useState(events[0]?.id ?? "");
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
-  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorKey | null>(null);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-    if (!eventId && (mode === "attendee" || events.length > 0)) return setError("choose_event");
-    setBusy(true);
-    setError(null);
-    const event = eventId || null;
-    const result =
-      mode === "attendee"
-        ? await post("/api/auth/attendee", { eventId: event, phone })
-        : mode === "staff"
-          ? await post("/api/auth/pin", { eventId: event, phone, pin })
-          : await post("/api/auth/setup-pin", { eventId: event, phone, setupCode: code, pin, pinConfirm });
+  function finish(result: { ok: true; data: Session } | { ok: false; error: ErrorKey }) {
     if (!result.ok) {
       setBusy(false);
       return setError(result.error);
@@ -77,28 +85,55 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
     router.refresh();
   }
 
-  function switchMode(next: Mode) {
-    setMode(next);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    if (!eventId && (tab === "attendee" || events.length > 0)) return setError("choose_event");
+    setBusy(true);
+    setError(null);
+    const event = eventId || null;
+
+    if (tab === "attendee") return finish(await post<Session>("/api/auth/attendee", { eventId: event, phone }));
+    if (step === "phone") {
+      const status = await post<{ next: "enter_pin" | "needs_pin" }>("/api/auth/pin-status", { phone });
+      setBusy(false);
+      if (!status.ok) return setError(status.error);
+      return setStep(status.data.next === "needs_pin" ? "setup" : "pin");
+    }
+    if (step === "pin") return finish(await post<Session>("/api/auth/pin", { eventId: event, phone, pin }));
+    return finish(await post<Session>("/api/auth/setup-pin", { eventId: event, phone, pin, pinConfirm }));
+  }
+
+  function reset(nextTab: Tab = tab) {
+    setTab(nextTab);
+    setStep("phone");
     setError(null);
     setPin("");
     setPinConfirm("");
-    setCode("");
   }
 
-  const tab = (m: Mode, label: string) => {
-    const selected = mode === m || (m === "staff" && mode === "setup");
-    return (
-      <button
-        type="button"
-        role="tab"
-        aria-selected={selected}
-        onClick={() => switchMode(m)}
-        className={`min-h-12 flex-1 rounded-lg border-2 px-3 text-base font-semibold ${selected ? "border-brand bg-brand text-brand-ink" : "border-line"}`}
-      >
-        {label}
-      </button>
-    );
-  };
+  const tabButton = (value: Tab, label: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === value}
+      onClick={() => reset(value)}
+      className={`min-h-12 flex-1 rounded-lg border-2 px-3 text-base font-semibold ${tab === value ? "border-brand bg-brand text-brand-ink" : "border-line"}`}
+    >
+      {label}
+    </button>
+  );
+
+  const staffPhoneLocked = tab === "staff" && step !== "phone";
+  const canSubmit =
+    !busy && phone.trim() !== "" && (tab === "attendee" || step === "phone" || (pin.length === 6 && (step === "pin" || pinConfirm.length === 6)));
+  const submitLabel = busy
+    ? t("signingIn")
+    : tab === "staff" && step === "phone"
+      ? t("continue")
+      : step === "setup" && tab === "staff"
+        ? t("setPinAndSignIn")
+        : t("signIn");
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-5" noValidate>
@@ -121,8 +156,8 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
       </Field>
 
       <div role="tablist" aria-label={t("whoAreYou")} className="flex gap-2">
-        {tab("attendee", t("attendeeTab"))}
-        {tab("staff", t("staffTab"))}
+        {tabButton("attendee", t("attendeeTab"))}
+        {tabButton("staff", t("staffTab"))}
       </div>
 
       {error && (
@@ -131,69 +166,49 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
         </p>
       )}
 
-      <Field label={t("phoneLabel")} hint={t("phoneHint")}>
-        {(id) => <input id={id} type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />}
+      <Field label={t("phoneLabel")} hint={staffPhoneLocked ? undefined : t("phoneHint")}>
+        {(id) => (
+          <input
+            id={id}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            required
+            readOnly={staffPhoneLocked}
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className={`${inputClass} ${staffPhoneLocked ? "bg-gray-50" : ""}`}
+          />
+        )}
       </Field>
 
-
-      {mode === "setup" && (
-        <Field label={t("setupCodeLabel")} hint={t("setupCodeHint")}>
-          {(id) => <input id={id} type="text" autoComplete="one-time-code" autoCapitalize="characters" required value={code} onChange={(e) => setCode(e.target.value)} className={inputClass} />}
-        </Field>
+      {tab === "staff" && step === "pin" && (
+        <Field label={t("pinLabel")}>{(id) => <PinInput id={id} value={pin} onChange={setPin} autoComplete="current-password" />}</Field>
       )}
 
-      {mode !== "attendee" && (
-        <Field label={mode === "setup" ? t("newPinLabel") : t("pinLabel")} hint={mode === "setup" ? t("newPinHint") : undefined}>
-          {(id) => (
-            <input
-              id={id}
-              type="password"
-              inputMode="numeric"
-              autoComplete={mode === "setup" ? "new-password" : "current-password"}
-              maxLength={6}
-              required
-              value={pin}
-              onChange={(e) => setPin(digitsOnly(e.target.value))}
-              className={`${inputClass} tracking-[0.5em]`}
-            />
-          )}
-        </Field>
+      {tab === "staff" && step === "setup" && (
+        <>
+          <p role="status" className="rounded-lg bg-blue-50 p-4">
+            {t("choosePinIntro")}
+          </p>
+          <Field label={t("newPinLabel")} hint={t("newPinHint")}>
+            {(id) => <PinInput id={id} value={pin} onChange={setPin} autoComplete="new-password" />}
+          </Field>
+          <Field label={t("confirmPinLabel")}>{(id) => <PinInput id={id} value={pinConfirm} onChange={setPinConfirm} autoComplete="new-password" />}</Field>
+        </>
       )}
 
-      {mode === "setup" && (
-        <Field label={t("confirmPinLabel")}>
-          {(id) => (
-            <input
-              id={id}
-              type="password"
-              inputMode="numeric"
-              autoComplete="new-password"
-              maxLength={6}
-              required
-              value={pinConfirm}
-              onChange={(e) => setPinConfirm(digitsOnly(e.target.value))}
-              className={`${inputClass} tracking-[0.5em]`}
-            />
-          )}
-        </Field>
-      )}
-
-      <button type="submit" disabled={busy || !phone.trim() || (mode !== "attendee" && pin.length !== 6)} className={primary}>
-        {busy ? t("signingIn") : mode === "setup" ? t("setPinAndSignIn") : t("signIn")}
+      <button type="submit" disabled={!canSubmit} className={primary}>
+        {submitLabel}
       </button>
 
-      {mode === "staff" && (
-        <button type="button" className={linkButton} onClick={() => switchMode("setup")}>
-          {t("firstTime")}
-        </button>
-      )}
-      {mode === "setup" && (
-        <button type="button" className={linkButton} onClick={() => switchMode("staff")}>
-          {t("haveAPin")}
+      {staffPhoneLocked && (
+        <button type="button" className={linkButton} onClick={() => reset()}>
+          {t("changeNumber")}
         </button>
       )}
 
-      <p className="text-muted">{mode === "attendee" ? t("attendeeHelp") : t("forgotPin")}</p>
+      <p className="text-muted">{tab === "attendee" ? t("attendeeHelp") : t("forgotPin")}</p>
     </form>
   );
 }

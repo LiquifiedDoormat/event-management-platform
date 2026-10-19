@@ -47,10 +47,8 @@ model User {
   status          AccountStatus @default(ACTIVE)
   preferredLocale Locale        @default(en)
   /// scrypt hash of the 6-digit PIN (Owner/Admin/Coordinator only). Never the PIN itself.
+  /// Null = the person chooses a PIN at their next sign-in (new account or admin reset).
   pinHash           String?
-  /// SHA-256 of a one-time setup code issued by an authorized admin (first sign-in / reset).
-  pinSetupCodeHash  String?   @unique
-  pinSetupExpiresAt DateTime?
   failedPinAttempts Int       @default(0)
   pinLockedUntil    DateTime?
   createdAt       DateTime      @default(now())

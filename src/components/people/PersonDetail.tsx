@@ -109,9 +109,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
               ? t("pinLocked", { time: format.dateTime(person.pin.lockedUntil, { timeStyle: "short" }) })
               : person.pin.isSet
                 ? t("pinIsSet")
-                : person.pin.setupPending
-                  ? t("pinSetupPending")
-                  : t("pinNotSet")}
+                : t("pinNotSet")}
           </p>
           {canPin && (
             <ActionForm
