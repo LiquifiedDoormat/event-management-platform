@@ -9,7 +9,7 @@ import { IMPORT_COLUMNS, type ImportEntity } from "@/lib/import/entities";
 import { ImportError } from "@/lib/import/errors";
 import type { ParsedSheet } from "@/lib/import/parse";
 import { eventOf } from "./context";
-import { assignHotelCoordinator, createHotel } from "./hotels";
+import { addHotelCoordinator, createHotel } from "./hotels";
 import { assignBusCoordinator, createBus } from "./buses";
 import { createPerson } from "./people";
 
@@ -270,7 +270,7 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
           role,
           hotelId: role === "CUSTOMER" && hotelId ? hotelId : undefined,
         });
-        if (role === "COORDINATOR" && hotelId) await assignHotelCoordinator(actor, hotelId, created.id);
+        if (role === "COORDINATOR" && hotelId) await addHotelCoordinator(actor, hotelId, created.id);
         return created.addedExisting ? { kind: "addedExisting" } : { kind: "created" };
       },
     };

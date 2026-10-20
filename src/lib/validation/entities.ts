@@ -30,13 +30,13 @@ export const stopInput = z
   .refine(bothOrNeither, { message: "coordsPair", path: ["latitude"] });
 export type StopInput = z.infer<typeof stopInput>;
 
-export const roleSchema = z.enum(["OWNER", "ADMIN", "COORDINATOR", "CUSTOMER"]);
+export const roleSchema = z.enum(["OWNER", "ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"]);
 export const statusSchema = z.enum(["ACTIVE", "INACTIVE"]);
 
 export const personCreateInput = z.object({
   name: requiredText(120),
   phone,
-  role: z.enum(["ADMIN", "COORDINATOR", "CUSTOMER"]),
+  role: z.enum(["ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"]),
   hotelId: optionalId,
 });
 export type PersonCreateInput = z.infer<typeof personCreateInput>;

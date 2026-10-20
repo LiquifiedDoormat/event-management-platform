@@ -38,9 +38,16 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
 
   it("keeps owner-only actions away from admins", async () => {
     const admin = await staff("ADMIN");
-    const { hotelA, coordB } = await createTwoHotels();
+    const { hotelA } = await createTwoHotels();
     await expectError(hotels.setHotelActive(admin, hotelA.id, false), "forbidden");
-    await expectError(hotels.assignHotelCoordinator(admin, hotelA.id, coordB.id), "forbidden");
+  });
+
+  it("lets admins manage a hotel's coordinator roster (not owner-only, unlike before)", async () => {
+    const admin = await staff("ADMIN");
+    const { hotelA, coordB } = await createTwoHotels();
+    await hotels.addHotelCoordinator(admin, hotelA.id, coordB.id);
+    const h = await hotels.getHotel(admin, hotelA.id);
+    expect(h.coordinators.map((c) => c.id)).toContain(coordB.id);
   });
 
   it("denies customers and coordinators", async () => {
@@ -50,18 +57,22 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
     await expectError(hotels.createHotel(coordA, hotel("Z")), "forbidden");
   });
 
-  it("moves a coordinator between hotels, keeping one hotel per coordinator", async () => {
+  it("moves a coordinator between hotels (still one hotel per coordinator, many coordinators per hotel)", async () => {
     const owner = await staff("OWNER");
-    const { hotelA, hotelB, coordA } = await createTwoHotels();
-    await hotels.assignHotelCoordinator(owner, hotelB.id, coordA.id);
-    expect((await prisma.hotel.findUniqueOrThrow({ where: { id: hotelB.id } })).coordinatorId).toBe(coordA.id);
-    expect((await prisma.hotel.findUniqueOrThrow({ where: { id: hotelA.id } })).coordinatorId).toBeNull();
+    const { hotelA, hotelB, coordA, coordB } = await createTwoHotels();
+    await hotels.addHotelCoordinator(owner, hotelB.id, coordA.id);
+    const hB = await hotels.getHotel(owner, hotelB.id);
+    const hA = await hotels.getHotel(owner, hotelA.id);
+    // hotelB now has both its own coordinator and coordA (many coordinators per hotel)...
+    expect(hB.coordinators.map((c) => c.id).sort()).toEqual([coordA.id, coordB.id].sort());
+    // ...but coordA is gone from hotelA (one hotel per coordinator).
+    expect(hA.coordinators.map((c) => c.id)).not.toContain(coordA.id);
   });
 
   it("only assigns active coordinators", async () => {
     const owner = await staff("OWNER");
     const { hotelA, guestA } = await createTwoHotels();
-    await expectError(hotels.assignHotelCoordinator(owner, hotelA.id, guestA.id), "invalid", "notActiveCoordinator");
+    await expectError(hotels.addHotelCoordinator(owner, hotelA.id, guestA.id), "invalid", "notActiveCoordinator");
   });
 
   it("won't deactivate a hotel that still has buses or attendees", async () => {
@@ -211,9 +222,10 @@ describe.skipIf(!hasTestDb)("people service", () => {
 
   it("changing a coordinator's role clears their hotel and bus designations", async () => {
     const owner = await staff("OWNER");
-    const { coordA, hotelA, busA } = await createTwoHotels();
+    const { coordA, busA, eventId } = await createTwoHotels();
     await people.changeRole(owner, coordA.id, "ADMIN");
-    expect((await prisma.hotel.findUniqueOrThrow({ where: { id: hotelA.id } })).coordinatorId).toBeNull();
+    const membership = await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: coordA.id } } });
+    expect(membership?.hotelId).toBeNull();
     expect((await prisma.bus.findUniqueOrThrow({ where: { id: busA.id } })).coordinatorId).toBeNull();
   });
 

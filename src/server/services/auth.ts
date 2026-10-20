@@ -191,5 +191,11 @@ export async function logout(token: string | undefined) {
 
 /** Where each role lands after sign-in (locale prefix added by the caller). */
 export function roleHome(role: Role): string {
-  return { OWNER: "/owner", ADMIN: "/admin", COORDINATOR: "/coordinator", CUSTOMER: "/customer" }[role];
+  return {
+    OWNER: "/owner",
+    ADMIN: "/admin",
+    CLUSTER_COORDINATOR: "/cluster-coordinator",
+    COORDINATOR: "/coordinator",
+    CUSTOMER: "/customer",
+  }[role];
 }

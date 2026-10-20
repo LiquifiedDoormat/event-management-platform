@@ -8,7 +8,7 @@ Mobile-first, English/Hindi web app for running event logistics across **multipl
 
 - **Events:** independent events, each with its own hotels, buses, coordinators and attendees; chosen on the sign-in page; Owner/Admin can switch events without signing out.
 - **Sign-in without SMS:** Owner/Admin/Coordinator use phone + 6-digit PIN (first PIN chosen at first sign-in; forgotten PINs reset by an administrator); attendees use phone number + event. Persistent sessions; sign-out.
-- **Roles:** Owner, Admin, Coordinator, Attendee (read-only), enforced on the server.
+- **Roles:** Owner, Admin, Cluster Coordinator, Hotel Coordinator, Attendee (read-only), enforced on the server. A hotel may now have several hotel coordinators (each one still runs at most one hotel); a cluster coordinator has read-only oversight of every hotel in their assigned cluster (`Cluster` model — optional grouping; see `docs/SECURITY.md` for the full permission matrix). The cluster coordinator's operational dashboard is not built yet — only sign-in, role assignment and a read-only "your cluster" page exist so far.
 - Hotel, bus (with stops), coordinator and people directories; assignments; audit log.
 - Coordinators: trip controls, large status buttons, GPS sharing from the phone, searchable list of attendees at their hotel.
 - Attendees: their hotel, coordinator, buses, stops, live status and position (updated by polling).

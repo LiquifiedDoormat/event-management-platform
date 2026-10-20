@@ -10,11 +10,17 @@ import type { Role } from "@/generated/prisma/client";
  */
 export type Actor = { id: string; role: Role; hotelId?: string | null; eventId?: string | null };
 
-/** What a non-staff user is allowed to see/operate, loaded by `loadScope`. */
+/**
+ * What a non-staff user is allowed to see/operate, loaded by `loadScope`.
+ * A hotel coordinator's scope is their one hotel; a cluster coordinator's is
+ * every hotel in their cluster (view only — see canStartTrip/canSendLocation,
+ * which stay keyed to `operableBusIds` and so never include a cluster
+ * coordinator, who has no buses of their own).
+ */
 export type Scope = {
-  /** Hotels whose details, coordinator and buses the actor may view. */
+  /** Hotels whose details, coordinators and buses the actor may view. */
   hotelIds: ReadonlySet<string>;
-  /** Buses the actor may operate (status + GPS). Coordinators only. */
+  /** Buses the actor may operate (status + GPS). Hotel coordinators only. */
   operableBusIds: ReadonlySet<string>;
 };
 
@@ -29,7 +35,11 @@ export type Action =
   | "hotel.create"
   | "hotel.update"
   | "hotel.deactivate"
-  | "hotel.assignCoordinator"
+  | "hotel.manageCoordinators"
+  | "cluster.create"
+  | "cluster.update"
+  | "cluster.manageHotels"
+  | "cluster.manageCoordinators"
   | "bus.create"
   | "bus.update"
   | "bus.editStops"
@@ -53,6 +63,15 @@ const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "dashboard.viewAll",
   "hotel.create",
   "hotel.update",
+  // A hotel's coordinator roster is now a many-to-many membership, not a single
+  // scarce slot (unlike bus.assignCoordinator, which still picks the one person
+  // responsible for a bus), so it's provisioning work like person.create, not an
+  // Owner-only reassignment.
+  "hotel.manageCoordinators",
+  "cluster.create",
+  "cluster.update",
+  "cluster.manageHotels",
+  "cluster.manageCoordinators",
   "bus.create",
   "bus.update",
   "bus.editStops",
@@ -76,7 +95,7 @@ export function can(actor: Actor, action: Action): boolean {
  * `scripts/create-owner.ts`. Admins may provision attendees only.
  */
 export function assignableRoles(actor: Actor): Role[] {
-  if (actor.role === "OWNER") return ["ADMIN", "COORDINATOR", "CUSTOMER"];
+  if (actor.role === "OWNER") return ["ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"];
   if (actor.role === "ADMIN") return ["CUSTOMER"];
   return [];
 }
@@ -96,15 +115,15 @@ export function canSetAttendeeHotel(actor: Actor, currentHotelId: string | null)
  */
 export function canResetPin(actor: Actor, target: { id: string; role: Role }): boolean {
   if (actor.id === target.id) return false;
-  if (actor.role === "OWNER") return target.role === "ADMIN" || target.role === "COORDINATOR";
-  if (actor.role === "ADMIN") return target.role === "COORDINATOR";
+  if (actor.role === "OWNER") return target.role === "ADMIN" || target.role === "CLUSTER_COORDINATOR" || target.role === "COORDINATOR";
+  if (actor.role === "ADMIN") return target.role === "CLUSTER_COORDINATOR" || target.role === "COORDINATOR";
   return false;
 }
 
-/** Admins may edit attendees and coordinators, never other staff. */
+/** Admins may edit attendees and (hotel/cluster) coordinators, never other staff. */
 export function canEditPerson(actor: Actor, target: { id: string; role: Role }): boolean {
   if (actor.role === "OWNER") return target.role !== "OWNER" || target.id === actor.id;
-  if (actor.role === "ADMIN") return target.role === "CUSTOMER" || target.role === "COORDINATOR";
+  if (actor.role === "ADMIN") return target.role === "CUSTOMER" || target.role === "CLUSTER_COORDINATOR" || target.role === "COORDINATOR";
   return false;
 }
 
@@ -121,9 +140,10 @@ export function canViewBus(actor: Actor, scope: Scope, bus: { hotelId: string })
 }
 
 /**
- * Person detail pages: staff see everyone; users see themselves; coordinators see
- * attendees of hotels in their scope. Customers see their coordinator only through
- * the hotel view, which exposes name and phone and nothing else.
+ * Person detail pages: staff see everyone; users see themselves; hotel coordinators
+ * see attendees of their one hotel; cluster coordinators see attendees and hotel
+ * coordinators of hotels in their cluster. Customers see their coordinator only
+ * through the hotel view, which exposes name and phone and nothing else.
  */
 export function canViewPerson(
   actor: Actor,
@@ -133,6 +153,11 @@ export function canViewPerson(
   if (isStaff(actor) || actor.id === target.id) return true;
   if (actor.role === "COORDINATOR") {
     return target.role === "CUSTOMER" && target.hotelId !== null && scope.hotelIds.has(target.hotelId);
+  }
+  if (actor.role === "CLUSTER_COORDINATOR") {
+    return (
+      (target.role === "CUSTOMER" || target.role === "COORDINATOR") && target.hotelId !== null && scope.hotelIds.has(target.hotelId)
+    );
   }
   return false;
 }

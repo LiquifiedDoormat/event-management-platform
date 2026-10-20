@@ -108,7 +108,7 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
     });
 
     it("lets the Owner assign a coordinator to multiple buses via coordinatorPhone", async () => {
-      const { eventId, hotelA, coordA } = await createTwoHotels();
+      const { eventId, coordA } = await createTwoHotels();
       const owner = await staff("OWNER", eventId);
       const localPhone = coordA.phone.replace("+91", "");
       const data = sheet(
@@ -169,8 +169,12 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
       const data = sheet(["name", "phone", "hotelName"], [["Asha Rao", "9876500099", "Hotel A"]]);
       const result = await commitImport(owner, "coordinators", data);
       expect(result).toMatchObject({ created: 1 });
-      const hotel = await prisma.hotel.findUnique({ where: { id: hotelA.id } });
-      expect(hotel?.coordinatorId).not.toBeNull();
+      const newCoordinator = await prisma.user.findFirst({ where: { phone: "+919876500099" }, select: { id: true } });
+      const membership = await prisma.eventMember.findUnique({
+        where: { eventId_userId: { eventId, userId: newCoordinator!.id } },
+        select: { hotelId: true },
+      });
+      expect(membership?.hotelId).toBe(hotelA.id);
     });
 
     it("treats the same phone already a member of this event as a duplicate", async () => {

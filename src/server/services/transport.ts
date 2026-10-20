@@ -21,8 +21,8 @@ export async function getEventSettings() {
 
 /**
  * An attendee's homepage data: their own hotel (read from their current
- * allotment), its coordinator's name and phone only, and its active buses with
- * the latest status and location timestamp. Never includes other hotels.
+ * allotment), its active coordinators' names and phones, and its active buses
+ * with the latest status and location timestamp. Never includes other hotels.
  */
 export async function getCustomerHome(user: SessionUser) {
   const [settings, hotel] = await Promise.all([
@@ -35,7 +35,11 @@ export async function getCustomerHome(user: SessionUser) {
             address: true,
             latitude: true,
             longitude: true,
-            coordinator: { where: { status: "ACTIVE" }, select: { name: true, phone: true } },
+            members: {
+              where: { user: { role: "COORDINATOR", status: "ACTIVE" } },
+              orderBy: { user: { name: "asc" } },
+              select: { user: { select: { name: true, phone: true } } },
+            },
             buses: {
               where: { isActive: true },
               orderBy: { label: "asc" },
@@ -51,7 +55,8 @@ export async function getCustomerHome(user: SessionUser) {
         })
       : Promise.resolve(null),
   ]);
-  return { settings, hotel };
+  const shaped = hotel ? (({ members, ...rest }) => ({ ...rest, coordinators: members.map((m) => m.user) }))(hotel) : null;
+  return { settings, hotel: shaped };
 }
 
 /**

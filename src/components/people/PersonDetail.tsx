@@ -46,9 +46,12 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
             ...(person.role === "CUSTOMER"
               ? ([[t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>]] as [string, React.ReactNode][])
               : []),
+            ...(person.role === "CLUSTER_COORDINATOR"
+              ? ([[t("designatedCluster"), person.cluster ? person.cluster.name : "—"]] as [string, React.ReactNode][])
+              : []),
             ...(person.role === "COORDINATOR"
               ? ([
-                  [t("designatedHotel"), person.coordinatedHotel ? <Link key="ch" href={`/hotels/${person.coordinatedHotel.id}`} className="text-brand font-semibold underline">{person.coordinatedHotel.name}</Link> : "—"],
+                  [t("designatedHotel"), person.hotel ? <Link key="ch" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : "—"],
                   [
                     t("designatedBuses"),
                     person.designatedBuses.length ? (

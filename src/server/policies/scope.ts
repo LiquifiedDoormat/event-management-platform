@@ -21,10 +21,22 @@ export async function loadScope(actor: Actor): Promise<Scope> {
         : ((await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: actor.id } }, select: { hotelId: true } }))?.hotelId ?? null);
     return hotelId ? { hotelIds: new Set([hotelId]), operableBusIds: new Set() } : EMPTY;
   }
+  if (actor.role === "CLUSTER_COORDINATOR") {
+    const membership = await prisma.eventMember.findUnique({
+      where: { eventId_userId: { eventId, userId: actor.id } },
+      select: { clusterId: true },
+    });
+    if (!membership?.clusterId) return EMPTY;
+    const hotels = await prisma.hotel.findMany({ where: { eventId, clusterId: membership.clusterId }, select: { id: true } });
+    // View only: cluster coordinators oversee their cluster's hotels but don't
+    // operate buses themselves, so operableBusIds stays empty.
+    return { hotelIds: new Set(hotels.map((h) => h.id)), operableBusIds: new Set() };
+  }
   if (actor.role !== "COORDINATOR") return EMPTY;
 
-  const [hotel, buses, trips] = await Promise.all([
-    prisma.hotel.findFirst({ where: { coordinatorId: actor.id, eventId }, select: { id: true } }),
+  const [membership, buses, trips] = await Promise.all([
+    // A hotel coordinator's own hotel membership (several coordinators may share a hotel).
+    prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: actor.id } }, select: { hotelId: true } }),
     prisma.bus.findMany({ where: { coordinatorId: actor.id, isActive: true, hotel: { eventId } }, select: { id: true, hotelId: true } }),
     prisma.trip.findMany({
       where: { coordinatorId: actor.id, endedAt: null, bus: { hotel: { eventId } } },
@@ -34,7 +46,7 @@ export async function loadScope(actor: Actor): Promise<Scope> {
 
   const hotelIds = new Set<string>();
   const operableBusIds = new Set<string>();
-  if (hotel) hotelIds.add(hotel.id);
+  if (membership?.hotelId) hotelIds.add(membership.hotelId);
   for (const b of buses) {
     hotelIds.add(b.hotelId);
     operableBusIds.add(b.id);

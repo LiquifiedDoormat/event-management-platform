@@ -39,8 +39,12 @@ export async function setHotelActiveAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => hotels.setHotelActive(u, id.parse(d.id), d.active === "true"));
 }
 
-export async function assignHotelCoordinatorAction(_: ActionState, form: FormData) {
-  return run(form, (u, d) => hotels.assignHotelCoordinator(u, id.parse(d.id), optionalRef.parse(d.coordinatorId)));
+export async function addHotelCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => hotels.addHotelCoordinator(u, id.parse(d.id), id.parse(d.coordinatorId)));
+}
+
+export async function removeHotelCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => hotels.removeHotelCoordinator(u, id.parse(d.id), id.parse(d.coordinatorId)));
 }
 
 // ---- Buses & stops --------------------------------------------------------

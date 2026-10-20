@@ -75,7 +75,12 @@
     "auditLog": "Audit log",
     "eventSettings": "Event settings",
     "myAttendees": "Attendees at my hotel",
-    "manageEvents": "Manage events"
+    "manageEvents": "Manage events",
+    "clusterCoordinatorTitle": "Your cluster",
+    "yourCluster": "Cluster",
+    "noCluster": "You have not been assigned a cluster yet. Please contact the event admin.",
+    "clusterHotels": "Hotels in your cluster",
+    "noClusterHotels": "No hotels are in this cluster yet."
   },
   "busStatus": {
     "BOARDING": "Boarding",
@@ -190,7 +195,11 @@
     "edit": "Edit hotel",
     "deactivate": "Deactivate hotel",
     "activate": "Reactivate hotel",
-    "confirmDeactivate": "Deactivate this hotel? It will be hidden from lists."
+    "confirmDeactivate": "Deactivate this hotel? It will be hidden from lists.",
+    "coordinators": "Hotel coordinators",
+    "remove": "Remove",
+    "confirmRemoveCoordinator": "Remove {name} as a coordinator of this hotel? They keep their account.",
+    "choose": "Choose a coordinator"
   },
   "buses": {
     "title": "Buses",
@@ -280,7 +289,9 @@
     "pinNotSet": "No PIN yet. They will choose one at their next sign-in.",
     "pinLocked": "Locked after too many wrong PINs until {time}.",
     "resetPin": "Reset PIN",
-    "confirmResetPin": "Reset the PIN for {name}? Their current PIN stops working, they are signed out, and they choose a new PIN at their next sign-in. Ask them to do it right away."
+    "confirmResetPin": "Reset the PIN for {name}? Their current PIN stops working, they are signed out, and they choose a new PIN at their next sign-in. Ask them to do it right away.",
+    "coordinatesCluster": "Cluster coordinator for {cluster}",
+    "designatedCluster": "Designated cluster"
   },
   "transport": {
     "notRunning": "This bus is not running right now.",

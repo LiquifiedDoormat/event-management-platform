@@ -54,8 +54,10 @@ export async function createTwoHotels(eventId?: string) {
   const ev = eventId ?? (await defaultEvent());
   const coordA = await createUser("COORDINATOR", { eventId: ev });
   const coordB = await createUser("COORDINATOR", { eventId: ev });
-  const hotelA = await prisma.hotel.create({ data: { eventId: ev, name: "Hotel A", address: "A St", coordinatorId: coordA.id } });
-  const hotelB = await prisma.hotel.create({ data: { eventId: ev, name: "Hotel B", address: "B St", coordinatorId: coordB.id } });
+  const hotelA = await prisma.hotel.create({ data: { eventId: ev, name: "Hotel A", address: "A St" } });
+  const hotelB = await prisma.hotel.create({ data: { eventId: ev, name: "Hotel B", address: "B St" } });
+  await prisma.eventMember.update({ where: { eventId_userId: { eventId: ev, userId: coordA.id } }, data: { hotelId: hotelA.id } });
+  await prisma.eventMember.update({ where: { eventId_userId: { eventId: ev, userId: coordB.id } }, data: { hotelId: hotelB.id } });
   const busA = await prisma.bus.create({ data: { label: "Bus A", hotelId: hotelA.id, coordinatorId: coordA.id } });
   const busB = await prisma.bus.create({ data: { label: "Bus B", hotelId: hotelB.id, coordinatorId: coordB.id } });
   const guestA = await createUser("CUSTOMER", { hotelId: hotelA.id, eventId: ev });

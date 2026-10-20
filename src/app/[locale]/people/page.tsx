@@ -55,8 +55,10 @@ export default async function PeoplePage({ params, searchParams }: PageProps<"/[
                 {p.status === "INACTIVE" && <Badge tone="danger">{tc("inactive")}</Badge>}
                 {p.role === "CUSTOMER" && !p.hotel && <Badge tone="warn">⚠ {t("noHotel")}</Badge>}
               </span>
-              {p.hotel && <span>🏨 {p.hotel.name}</span>}
-              {p.coordinatedHotel && <span>🏨 {t("coordinatesHotel", { hotel: p.coordinatedHotel.name })}</span>}
+              {p.hotel && (
+                <span>🏨 {p.role === "COORDINATOR" ? t("coordinatesHotel", { hotel: p.hotel.name }) : p.hotel.name}</span>
+              )}
+              {p.cluster && <span>🗺️ {t("coordinatesCluster", { cluster: p.cluster.name })}</span>}
             </ListCard>
           ))}
         </ul>

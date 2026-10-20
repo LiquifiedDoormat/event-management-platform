@@ -61,7 +61,7 @@ describe.skipIf(!hasTestDb)("attendee transport views", () => {
   it("customer home omits an inactive coordinator and handles no hotel", async () => {
     const { guestA, coordA } = await createTwoHotels();
     await prisma.user.update({ where: { id: coordA.id }, data: { status: "INACTIVE" } });
-    expect((await getCustomerHome(asSession(guestA))).hotel?.coordinator).toBeNull();
+    expect((await getCustomerHome(asSession(guestA))).hotel?.coordinators).toEqual([]);
     const unassigned = await createUser("CUSTOMER");
     expect((await getCustomerHome(asSession(unassigned))).hotel).toBeNull();
   });

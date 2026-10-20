@@ -14,6 +14,7 @@ datasource db {
 enum Role {
   OWNER
   ADMIN
+  CLUSTER_COORDINATOR
   COORDINATOR
   CUSTOMER
 }
@@ -56,7 +57,6 @@ model User {
 
   memberships      EventMember[]
 
-  coordinatedHotels Hotel[]         @relation("HotelCoordinator")
   designatedBuses  Bus[]            @relation("BusCoordinator")
   trips            Trip[]
   statusEvents     BusStatusEvent[]
@@ -78,10 +78,27 @@ model Event {
   updatedAt        DateTime  @updatedAt
 
   hotels   Hotel[]
+  clusters Cluster[]
   members  EventMember[]
   sessions Session[]
 
   @@index([isActive, name])
+}
+
+/// Groups hotels for one cluster coordinator's oversight within an event. Optional:
+/// a hotel with no cluster is simply ungrouped, never an error.
+model Cluster {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotels  Hotel[]
+  members EventMember[]
+
+  @@index([eventId, name])
 }
 
 /// Registration of an attendee or coordinator for an event (staff have access to all events).
@@ -91,37 +108,46 @@ model EventMember {
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// Attendee hotel allotment for this event. Read on every request so reassignment applies immediately.
+  /// Attendee's hotel allotment, or a hotel coordinator's assigned hotel (many
+  /// coordinators may share one hotel — nothing here makes it exclusive). Read on
+  /// every request so reassignment applies immediately.
   hotelId   String?
   hotel     Hotel?   @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  /// A cluster coordinator's assigned cluster. Unused by other roles.
+  clusterId String?
+  cluster   Cluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@unique([eventId, userId])
   @@index([userId])
   @@index([hotelId])
+  @@index([clusterId])
 }
 
 model Hotel {
-  id            String   @id @default(cuid())
-  eventId       String
-  event         Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  name          String
-  address       String
-  latitude      Float?
-  longitude     Float?
-  notes         String?
-  isActive      Boolean  @default(true)
-  /// One designated coordinator per hotel; a coordinator designates at most one hotel per event.
-  coordinatorId String?
-  coordinator   User?    @relation("HotelCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  name      String
+  address   String
+  latitude  Float?
+  longitude Float?
+  notes     String?
+  isActive  Boolean  @default(true)
+  /// Optional grouping for a cluster coordinator's oversight.
+  clusterId String?
+  cluster   Cluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  /// Hotel coordinators are EventMember rows with hotelId = this hotel and the
+  /// user's role = COORDINATOR (looked up, not a direct relation — several
+  /// coordinators may share a hotel; see services/hotels.ts).
   members EventMember[]
   buses   Bus[]
 
-  @@unique([eventId, coordinatorId])
   @@index([eventId, isActive, name])
+  @@index([clusterId])
 }
 
 model Bus {
