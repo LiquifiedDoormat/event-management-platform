@@ -1,6 +1,7 @@
 "use client";
 
-import { APILoadingStatus, APIProvider, AdvancedMarker, Map, Pin, useApiLoadingStatus } from "@vis.gl/react-google-maps";
+import { useEffect, useRef } from "react";
+import { APILoadingStatus, APIProvider, AdvancedMarker, Map, Pin, useApiLoadingStatus, useMap } from "@vis.gl/react-google-maps";
 import { useLocale } from "next-intl";
 import { mapId, type MapPoint } from "@/lib/maps/config";
 import type { LocationMapProps } from "./LocationMap";
@@ -13,23 +14,49 @@ const PIN_STYLE: Record<MapPoint["kind"], { background: string; borderColor: str
   busStale: { background: "#9ca3af", borderColor: "#4b5563", glyphColor: "#111827" },
 };
 
-function view(points: MapPoint[]) {
-  if (points.length === 1) return { defaultCenter: { lat: points[0].lat, lng: points[0].lng }, defaultZoom: 15 };
+/** The live bus marker's point id (see LiveBusDetail) — the one point `useRecenterOnFirstFix` watches for. */
+const BUS_POINT_ID = "bus";
+
+function boundsOf(points: MapPoint[]): google.maps.LatLngBoundsLiteral {
   const lats = points.map((p) => p.lat);
   const lngs = points.map((p) => p.lng);
-  return {
-    defaultBounds: {
-      north: Math.max(...lats),
-      south: Math.min(...lats),
-      east: Math.max(...lngs),
-      west: Math.min(...lngs),
-      padding: 48,
-    },
-  };
+  return { north: Math.max(...lats), south: Math.min(...lats), east: Math.max(...lngs), west: Math.min(...lngs) };
+}
+
+/** Initial camera: one point centers on it; several points fit them all, with padding. */
+export function view(points: MapPoint[]) {
+  if (points.length === 1) return { defaultCenter: { lat: points[0].lat, lng: points[0].lng }, defaultZoom: 15 };
+  return { defaultBounds: { ...boundsOf(points), padding: 48 } };
+}
+
+/**
+ * `defaultCenter`/`defaultBounds` on <Map> are only applied once, when the map
+ * is created — so if the page loads before the bus has a GPS fix yet, the map
+ * never moves to it once polling delivers the first one. This re-centers the
+ * map exactly once, the first time `BUS_POINT_ID` appears in `points`; every
+ * later update only moves the marker (see <AdvancedMarker position>) and never
+ * fights the viewer's own pan/zoom.
+ */
+function useRecenterOnFirstFix(points: MapPoint[]) {
+  const map = useMap();
+  const seenRef = useRef(points.some((p) => p.id === BUS_POINT_ID));
+  useEffect(() => {
+    if (!map || seenRef.current) return;
+    const bus = points.find((p) => p.id === BUS_POINT_ID);
+    if (!bus) return;
+    seenRef.current = true;
+    if (points.length > 1) {
+      map.fitBounds(boundsOf(points), 48);
+    } else {
+      map.setCenter({ lat: bus.lat, lng: bus.lng });
+      map.setZoom(15);
+    }
+  }, [map, points]);
 }
 
 function MapBody({ points, label, fallback, loadingText, failedText }: LocationMapProps) {
   const status = useApiLoadingStatus();
+  useRecenterOnFirstFix(points);
   if (status === APILoadingStatus.FAILED || status === APILoadingStatus.AUTH_FAILURE) {
     return (
       <div className="flex flex-col gap-2">

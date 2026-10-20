@@ -14,6 +14,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Default is 1 MB; bulk-import spreadsheets need more room (still capped, see MAX_FILE_BYTES).
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "5mb",
+    },
+  },
   turbopack: {
     rules: {
       "*.css": {
