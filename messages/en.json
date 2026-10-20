@@ -120,7 +120,8 @@
     "hotels": "Hotels",
     "buses": "Buses",
     "coordinators": "Coord­inators",
-    "people": "People"
+    "people": "People",
+    "import": "Import"
   },
   "directory": {
     "search": "Search",
@@ -458,5 +459,78 @@
     "intro": "People staying at the hotel(s) you coordinate for this event.",
     "searchPlaceholder": "Name or phone number",
     "none": "No attendees are assigned to your hotel yet."
+  },
+  "import": {
+    "heading": "Bulk import",
+    "intro": "Upload a spreadsheet to create many hotels, coordinators, attendees or buses at once. Preview the file before confirming — nothing is saved until you choose \"Import\".",
+    "entity": "What are you importing?",
+    "entities": {
+      "hotels": "Hotels",
+      "coordinators": "Coordinators",
+      "attendees": "Attendees",
+      "buses": "Buses"
+    },
+    "columnsHeading": "Columns",
+    "required": "Required",
+    "optional": "Optional",
+    "downloadTemplate": "Download a sample file",
+    "file": "File (.csv or .xlsx)",
+    "preview": "Preview",
+    "checking": "Checking…",
+    "confirm": "Import",
+    "importing": "Importing…",
+    "confirmImport": "Import the valid rows now? This cannot be undone from this screen.",
+    "previewHeading": "Preview",
+    "doneHeading": "Import finished",
+    "valid": "{count, plural, one {# row ready to import} other {# rows ready to import}}",
+    "duplicate": "{count, plural, one {# duplicate (skipped)} other {# duplicates (skipped)}}",
+    "invalid": "{count, plural, one {# row with errors} other {# rows with errors}}",
+    "noValidRows": "No rows are ready to import. Fix the errors above and upload again.",
+    "rowLabel": "Row {row}",
+    "moreRows": "{count, plural, one {…and # more row} other {…and # more rows}}",
+    "fields": {
+      "name": "Name",
+      "address": "Address",
+      "latitude": "Latitude",
+      "longitude": "Longitude",
+      "notes": "Notes",
+      "phone": "Phone number",
+      "hotelName": "Hotel name",
+      "label": "Bus label",
+      "registration": "Registration number",
+      "routeNotes": "Route notes",
+      "_form": "Form",
+      "coordinatorPhone": "Coordinator phone"
+    },
+    "issueKeys": {
+      "hotelNotFound": "No active hotel with this exact name in the current event.",
+      "hotelInactive": "That hotel is inactive.",
+      "roleMismatch": "An account with this phone number already exists with a different role.",
+      "duplicateHotelName": "A hotel with this name already exists in this event.",
+      "duplicateBus": "A bus with this label already exists at this hotel.",
+      "duplicateRegistration": "Another bus already has this registration number.",
+      "duplicatePhone": "This person is already registered for this event.",
+      "duplicatePhoneInFile": "This phone number appears more than once in the file.",
+      "coordinatorAssignForbidden": "Only the Owner can assign a bus coordinator. Leave this column blank, or ask the Owner to run this import.",
+      "coordinatorNotFound": "No active coordinator registered for this event has this phone number."
+    },
+    "errors": {
+      "emptyFile": "The file has no data rows.",
+      "fileTooLarge": "The file is too large (5 MB limit).",
+      "unsupportedFileType": "Choose a .csv or .xlsx file.",
+      "malformedFile": "The file could not be read. Make sure it's a valid CSV or Excel file.",
+      "tooManyRows": "The file has too many rows (2000 limit). Split it into smaller files.",
+      "missingColumns": "The file is missing required columns",
+      "invalidEntity": "Choose what to import.",
+      "noFile": "Choose a file first."
+    },
+    "results": {
+      "totalRows": "Data rows in file",
+      "created": "Created",
+      "addedExisting": "Added to this event (existing account)",
+      "skippedDuplicate": "Skipped as duplicates",
+      "invalidRows": "Skipped (errors)",
+      "failedRows": "Failed"
+    }
   }
 }

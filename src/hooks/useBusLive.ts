@@ -11,7 +11,7 @@ const POLL_ACTIVE_MS = 20_000;
 const POLL_IDLE_MS = 60_000;
 
 /** Keeps the newest location if an older one arrives late (same trip). */
-function merge(current: BusLiveSnapshot, incoming: BusLiveSnapshot): BusLiveSnapshot {
+export function merge(current: BusLiveSnapshot, incoming: BusLiveSnapshot): BusLiveSnapshot {
   const a = current.location?.recordedAt;
   const b = incoming.location?.recordedAt;
   if (incoming.trip && current.trip && a && b && b < a) return { ...incoming, location: current.location };

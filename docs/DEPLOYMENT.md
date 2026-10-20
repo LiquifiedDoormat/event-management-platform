@@ -31,7 +31,7 @@ Vercel → Project → Settings → Environment Variables. Set per environment:
 | `DATABASE_URL` | Neon main, pooled | Neon `preview` branch, pooled | |
 | `DIRECT_DATABASE_URL` | Neon main, direct | (optional) | Migrations only |
 | `APP_URL` | `https://<your-domain>` | `https://<project>.vercel.app` | Same-origin checks also accept the request's own host |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | optional | optional | Only for the embedded map (needs Google billing). Leave unset for zero provider cost. |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | optional | optional | Only for the embedded map on the attendee tracking page (needs Google billing; restrict the key to your domain(s), see README § Google Maps setup). Leave unset for zero provider cost — the app falls back to "Open in Google Maps" links. |
 | `CRON_SECRET` | ✓ | — | `openssl rand -hex 32`; Vercel Cron sends it to `/api/cron/prune` |
 | `MIGRATE_ON_BUILD` | — | `1` only if Preview uses its own DB | Production always migrates |
 
