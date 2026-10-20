@@ -38,13 +38,21 @@ const name = values.name?.trim();
 if (!phone) fail("--phone must be a valid mobile number");
 if (!name && !values["reset-pin"]) fail("--name is required");
 if (!process.env.DATABASE_URL) fail("DATABASE_URL is not set");
+// Shown on success so the operator can confirm it was the intended (production) database.
+const dbHost = (() => {
+  try {
+    return new URL(process.env.DATABASE_URL!).hostname;
+  } catch {
+    fail("DATABASE_URL is not a valid connection string");
+  }
+})();
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
 const noPin = { pinHash: null, failedPinAttempts: 0, pinLockedUntil: null };
 
 function done(who: string) {
-  console.log(`${who} (${maskPhone(phone!)}). Now sign in → "Staff or coordinator" → enter this phone number → choose a 6-digit PIN. Do it right away.`);
+  console.log(`${who} (${maskPhone(phone!)}) in database at ${dbHost}. Now sign in → "Staff or coordinator" → enter this phone number → choose a 6-digit PIN. Do it right away.`);
 }
 
 async function resetOwnerPin() {
