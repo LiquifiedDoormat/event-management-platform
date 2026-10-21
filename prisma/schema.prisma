@@ -85,10 +85,48 @@ model Event {
 
   hotels   Hotel[]
   clusters Cluster[]
+  zones    Zone[]
+  gates    Gate[]
   members  EventMember[]
   sessions Session[]
 
   @@index([isActive, name])
+}
+
+/// A seating/venue section attendees are assigned to (Phase 5). Optional: an
+/// attendee with no zone is simply unassigned, never an error.
+model Zone {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  name      String
+  capacity  Int?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gates   Gate[]
+  members EventMember[]
+
+  @@index([eventId, isActive, name])
+}
+
+/// An entry/exit point at the venue. Optionally linked to the zone it serves;
+/// a zone-less gate is a general venue gate (e.g. main entrance).
+model Gate {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  zoneId    String?
+  zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  name      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId, name])
+  @@index([zoneId])
 }
 
 /// Groups hotels for one cluster coordinator's oversight within an event. Optional:
@@ -122,12 +160,16 @@ model EventMember {
   /// A cluster coordinator's assigned cluster. Unused by other roles.
   clusterId String?
   cluster   Cluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  /// Attendee's assigned seating/venue zone. Unused by other roles.
+  zoneId    String?
+  zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@unique([eventId, userId])
   @@index([userId])
   @@index([hotelId])
   @@index([clusterId])
+  @@index([zoneId])
 }
 
 model Hotel {

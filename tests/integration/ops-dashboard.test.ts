@@ -19,7 +19,7 @@ describe.skipIf(!hasTestDb)("ops dashboard", () => {
   });
 
   it("summarizes the whole fleet regardless of filters, and lists only filtered buses", async () => {
-    const { eventId, coordA, busA, busB, hotelA } = await createTwoHotels();
+    const { eventId, coordA, busA, hotelA } = await createTwoHotels();
     await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "DEPARTED_VENUE", isDelayed: true } });
     // busB has no active trip -> notRunning.
     const admin = await staff("ADMIN", eventId);

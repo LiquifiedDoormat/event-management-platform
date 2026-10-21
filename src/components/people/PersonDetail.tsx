@@ -5,7 +5,8 @@ import type { SessionUser } from "@/lib/auth/session";
 import { assignableRoles, can, canEditPerson, canResetPin, canSetAttendeeHotel } from "@/server/policies";
 import { getPerson } from "@/server/services/people";
 import { hotelOptions } from "@/server/services/hotels";
-import { changeRoleAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, updatePersonAction } from "@/features/admin/actions";
+import { zoneOptions } from "@/server/services/zones";
+import { changeRoleAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updatePersonAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, PageHeader, Section } from "@/components/ui/Layout";
@@ -17,18 +18,22 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   const editable = can(user, "person.update") && canEditPerson(user, person);
   const isSelf = user.id === person.id;
   const canHotel = person.role === "CUSTOMER" && canSetAttendeeHotel(user, person.hotelId);
+  const canZone = person.role === "CUSTOMER" && can(user, "zone.manageAssignments");
   const canRole = !isSelf && can(user, "person.changeRole") && canEditPerson(user, person);
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
   const canPin = canResetPin(user, person);
-  const [t, tc, tr, ts, format, hotels] = await Promise.all([
+  const [t, tc, tr, ts, tz, format, hotels, zones] = await Promise.all([
     getTranslations("people"),
     getTranslations("common"),
     getTranslations("roles"),
     getTranslations("busStatus"),
+    getTranslations("zones"),
     getFormatter(),
     canHotel ? hotelOptions(user) : Promise.resolve([]),
+    canZone ? zoneOptions(user) : Promise.resolve([]),
   ]);
   const hotelSelect = hotels.map((h) => ({ value: h.id, label: h.name }));
+  const zoneSelect = zones.map((z) => ({ value: z.id, label: z.name }));
 
   return (
     <section className="flex flex-col gap-5">
@@ -44,7 +49,10 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
           items={[
             [t("phone"), <a key="p" href={`tel:${person.phone}`} className="underline">📞 {person.phone}</a>],
             ...(person.role === "CUSTOMER"
-              ? ([[t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>]] as [string, React.ReactNode][])
+              ? ([
+                  [t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>],
+                  [tz("title"), person.zone ? <Link key="z" href={`/zones/${person.zone.id}`} className="text-brand font-semibold underline">{person.zone.name}</Link> : "—"],
+                ] as [string, React.ReactNode][])
               : []),
             ...(person.role === "CLUSTER_COORDINATOR"
               ? ([[t("designatedCluster"), person.cluster ? person.cluster.name : "—"]] as [string, React.ReactNode][])
@@ -93,6 +101,14 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
         <Section title={t("hotelAllotment")}>
           <ActionForm action={setPersonHotelAction} hidden={{ id: person.id }} submitLabel={t("saveHotel")} inline>
             <SelectField name="hotelId" label={t("hotel")} defaultValue={person.hotelId ?? ""} emptyLabel={t("noHotel")} options={hotelSelect} />
+          </ActionForm>
+        </Section>
+      )}
+
+      {canZone && (
+        <Section title={tz("title")}>
+          <ActionForm action={setPersonZoneAction} hidden={{ id: person.id }} submitLabel={tc("save")} inline>
+            <SelectField name="zoneId" label={tz("title")} defaultValue={person.zoneId ?? ""} emptyLabel={tz("unassignedAttendees")} options={zoneSelect} />
           </ActionForm>
         </Section>
       )}

@@ -78,11 +78,15 @@ function searchWhere(q?: string): Prisma.UserWhereInput {
   };
 }
 
-const shape = <T extends { memberships: { hotel: { id: string; name: string } | null; cluster: { id: string; name: string } | null }[] }>(
+const shape = <
+  T extends {
+    memberships: { hotel: { id: string; name: string } | null; cluster: { id: string; name: string } | null; zone?: { id: string; name: string } | null }[];
+  },
+>(
   p: T,
 ) => {
   const { memberships, ...rest } = p;
-  return { ...rest, hotel: memberships[0]?.hotel ?? null, cluster: memberships[0]?.cluster ?? null };
+  return { ...rest, hotel: memberships[0]?.hotel ?? null, cluster: memberships[0]?.cluster ?? null, zone: memberships[0]?.zone ?? null };
 };
 
 /** Directory of the current event: search by name, phone digits or exact id. Staff only. */
@@ -149,7 +153,10 @@ export async function getPerson(actor: Actor, id: string) {
       updatedAt: true,
       pinHash: true,
       pinLockedUntil: true,
-      memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } } } },
+      memberships: {
+        where: { eventId },
+        select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+      },
       designatedBuses: { where: { hotel: { eventId } }, select: { id: true, label: true, isActive: true }, orderBy: { label: "asc" } },
       trips: {
         where: { endedAt: null, bus: { hotel: { eventId } } },
@@ -162,6 +169,7 @@ export async function getPerson(actor: Actor, id: string) {
   const result = {
     ...rest,
     hotelId: rest.hotel?.id ?? null,
+    zoneId: rest.zone?.id ?? null,
     // PIN status only (never the hash), for privileged accounts.
     pin: PRIVILEGED.includes(person.role)
       ? {

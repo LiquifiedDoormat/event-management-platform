@@ -134,7 +134,8 @@
       "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings.",
       "noEventSelected": "Choose an event first.",
       "notActiveClusterCoordinator": "Choose an active cluster coordinator.",
-      "invalidTransition": "That status change isn't allowed from the current status."
+      "invalidTransition": "That status change isn't allowed from the current status.",
+      "zoneInUse": "This zone still has attendees assigned to it. Reassign them first."
     },
     "notFoundHelp": "It may have moved, or you may not have access to it.",
     "pageFailed": "This page could not be loaded",
@@ -150,7 +151,8 @@
     "people": "People",
     "import": "Import",
     "clusters": "Clusters",
-    "ops": "Ops board"
+    "ops": "Ops board",
+    "zones": "Zones"
   },
   "directory": {
     "search": "Search",
@@ -603,5 +605,35 @@
     "coordinatorMoveHint": "If the person already coordinates another cluster, they will be moved here.",
     "confirmRemoveCoordinator": "Remove {name} as a coordinator of this cluster? They keep their account.",
     "edit": "Edit cluster"
+  },
+  "zones": {
+    "title": "Zones",
+    "add": "Add zone",
+    "create": "Create zone",
+    "intro": "Seating or venue sections attendees can be assigned to.",
+    "searchPlaceholder": "Zone name",
+    "none": "No zones yet.",
+    "counts": "{attendees, plural, one {# attendee} other {# attendees}} · {gates, plural, one {# gate} other {# gates}}",
+    "capacityLabel": "Capacity: {capacity}",
+    "name": "Zone name",
+    "capacity": "Capacity",
+    "capacityHint": "Optional. Shown for reference only — attendees are not blocked once it's reached.",
+    "notes": "Notes",
+    "details": "Details",
+    "attendeeCount": "Attendees assigned",
+    "gates": "Gates",
+    "noGates": "No gates for this zone yet.",
+    "addGate": "Add gate",
+    "gateName": "Gate name",
+    "remove": "Remove",
+    "bulkAssign": "Bulk-assign attendees",
+    "bulkAssignHint": "Assigns every active attendee of a hotel (or every unassigned attendee) to this zone in one go.",
+    "chooseHotel": "Hotel",
+    "unassignedAttendees": "Unassigned attendees",
+    "assign": "Assign",
+    "edit": "Edit zone",
+    "deactivate": "Deactivate zone",
+    "activate": "Reactivate zone",
+    "confirmDeactivate": "Deactivate this zone? It will be hidden from lists."
   }
 }

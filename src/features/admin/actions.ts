@@ -9,17 +9,20 @@ import {
   busCreateInput,
   busInput,
   clusterInput,
+  gateInput,
   hotelInput,
   personCreateInput,
   personUpdateInput,
   roleSchema,
   statusSchema,
   stopInput,
+  zoneInput,
 } from "@/lib/validation/entities";
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
 import * as clusters from "@/server/services/clusters";
+import * as zones from "@/server/services/zones";
 import * as settings from "@/server/services/settings";
 import { run } from "@/features/run-action";
 import type { ActionState } from "./action-state";
@@ -138,6 +141,40 @@ export async function addClusterCoordinatorAction(_: ActionState, form: FormData
 
 export async function removeClusterCoordinatorAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => clusters.removeClusterCoordinator(u, id.parse(d.id), id.parse(d.coordinatorId)));
+}
+
+// ---- Zones ------------------------------------------------------------------
+
+export async function createZoneAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => `/zones/${(await zones.createZone(u, zoneInput.parse(d))).id}`);
+}
+
+export async function updateZoneAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => zones.updateZone(u, id.parse(d.id), zoneInput.parse(d)));
+}
+
+export async function setZoneActiveAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => zones.setZoneActive(u, id.parse(d.id), d.active === "true"));
+}
+
+export async function addGateAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await zones.addGate(u, gateInput.parse(d));
+  });
+}
+
+export async function removeGateAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => zones.removeGate(u, id.parse(d.id)));
+}
+
+export async function setPersonZoneAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => zones.setPersonZone(u, id.parse(d.id), optionalRef.parse(d.zoneId)));
+}
+
+export async function bulkAssignZoneAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await zones.bulkAssignZone(u, { zoneId: id.parse(d.zoneId), hotelId: optionalRef.parse(d.hotelId) ?? undefined });
+  });
 }
 
 // ---- Event settings (Owner) ------------------------------------------------

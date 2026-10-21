@@ -40,6 +40,11 @@ export type Action =
   | "cluster.update"
   | "cluster.manageHotels"
   | "cluster.manageCoordinators"
+  | "zone.create"
+  | "zone.update"
+  | "zone.deactivate"
+  | "zone.manageGates"
+  | "zone.manageAssignments"
   | "bus.create"
   | "bus.update"
   | "bus.editStops"
@@ -72,6 +77,13 @@ const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "cluster.update",
   "cluster.manageHotels",
   "cluster.manageCoordinators",
+  // Zone/gate management and attendee zone assignment are ordinary provisioning
+  // (like hotel.manageCoordinators above), not a scarce 1:1 resource swap.
+  "zone.create",
+  "zone.update",
+  "zone.deactivate",
+  "zone.manageGates",
+  "zone.manageAssignments",
   "bus.create",
   "bus.update",
   "bus.editStops",

@@ -4,6 +4,16 @@ import { bothOrNeither, coordinates, optionalId, optionalText, phone, requiredTe
 export const clusterInput = z.object({ name: requiredText(120) });
 export type ClusterInput = z.infer<typeof clusterInput>;
 
+export const zoneInput = z.object({
+  name: requiredText(120),
+  capacity: z.preprocess((v) => (v === "" || v == null ? undefined : Number(v)), z.number().int().positive().optional()),
+  notes: optionalText(2000),
+});
+export type ZoneInput = z.infer<typeof zoneInput>;
+
+export const gateInput = z.object({ name: requiredText(120), notes: optionalText(2000), zoneId: optionalId });
+export type GateInput = z.infer<typeof gateInput>;
+
 export const hotelInput = z
   .object({
     name: requiredText(120),
