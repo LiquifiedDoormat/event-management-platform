@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
 import { AppError } from "@/server/errors";
+import { assignBusCoordinator } from "@/server/services/buses";
 import { getLiveBus } from "@/server/services/transport";
 import { changeStatus, endTrip, recordLocation, setSharing, startTrip } from "@/server/services/trips";
 import { createTwoHotels, hasTestDb, resetDb, staff } from "./helpers";
@@ -39,8 +40,10 @@ describe.skipIf(!hasTestDb)("trips, status and GPS", () => {
     await startTrip(coordA, busA.id);
     const admin = await staff("ADMIN");
     await rejects(startTrip(admin, busA.id), "conflict", "busOnTrip");
-    // coordA also designated to busB → still only one trip at a time.
-    await prisma.bus.update({ where: { id: busB.id }, data: { coordinatorId: coordA.id } });
+    // coordA is reassigned to busB (one bus per coordinator moves them; their
+    // active trip on busA is untouched) → still only one trip at a time.
+    const owner = await staff("OWNER");
+    await assignBusCoordinator(owner, busB.id, coordA.id);
     await rejects(startTrip(coordA, busB.id), "conflict", "coordinatorOnTrip");
   });
 

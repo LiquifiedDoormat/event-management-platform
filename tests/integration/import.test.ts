@@ -107,7 +107,7 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
       expect(result).toMatchObject({ created: 0, skippedDuplicate: 2 });
     });
 
-    it("lets the Owner assign a coordinator to multiple buses via coordinatorPhone", async () => {
+    it("assigns coordinatorPhone, moving the coordinator to the last-listed bus if it repeats (one bus per coordinator)", async () => {
       const { eventId, coordA } = await createTwoHotels();
       const owner = await staff("OWNER", eventId);
       const localPhone = coordA.phone.replace("+91", "");
@@ -120,8 +120,11 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
       );
       const result = await commitImport(owner, "buses", data);
       expect(result).toMatchObject({ created: 2, invalidRows: 0 });
-      const buses = await prisma.bus.findMany({ where: { label: { in: ["Bus 20", "Bus 21"] } } });
-      expect(buses.every((b) => b.coordinatorId === coordA.id)).toBe(true);
+      const bus20 = await prisma.bus.findFirstOrThrow({ where: { label: "Bus 20" } });
+      const bus21 = await prisma.bus.findFirstOrThrow({ where: { label: "Bus 21" } });
+      // A coordinator is responsible for at most one bus: the later row wins.
+      expect(bus20.coordinatorId).toBeNull();
+      expect(bus21.coordinatorId).toBe(coordA.id);
     });
 
     it("rejects an unknown coordinatorPhone (not an active coordinator of this event)", async () => {

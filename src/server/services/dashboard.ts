@@ -35,9 +35,31 @@ export async function getClusterCoordinatorOverview(user: SessionUser) {
   const hotels = await prisma.hotel.findMany({
     where: { eventId, clusterId: membership.cluster.id },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, address: true },
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      members: {
+        where: { user: { role: "COORDINATOR", status: "ACTIVE" } },
+        select: { user: { select: { name: true, phone: true } } },
+      },
+      _count: {
+        select: {
+          buses: { where: { isActive: true } },
+          members: { where: { user: { role: "CUSTOMER", status: "ACTIVE" } } },
+        },
+      },
+    },
   });
-  return { cluster: membership.cluster, hotels };
+  return {
+    cluster: membership.cluster,
+    hotels: hotels.map(({ members, _count, ...h }) => ({
+      ...h,
+      coordinators: members.map((m) => m.user),
+      busCount: _count.buses,
+      attendeeCount: _count.members,
+    })),
+  };
 }
 
 /** A coordinator's assigned hotel and the buses they accompany, in the current event. */

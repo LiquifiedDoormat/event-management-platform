@@ -13,6 +13,7 @@ export function StaffNav({ home }: { home: string }) {
   const items = [
     { href: home, label: t("home"), icon: "🏠" },
     { href: "/hotels", label: t("hotels"), icon: "🏨" },
+    { href: "/clusters", label: t("clusters"), icon: "🗺️" },
     { href: "/buses", label: t("buses"), icon: "🚌" },
     { href: "/coordinators", label: t("coordinators"), icon: "🧑‍✈️" },
     { href: "/people", label: t("people"), icon: "👥" },
@@ -24,7 +25,7 @@ export function StaffNav({ home }: { home: string }) {
       aria-label={t("label")}
       className="fixed bottom-0 inset-x-0 z-10 border-t border-line bg-surface sm:static sm:border-t-0 sm:border-b"
     >
-      <ul className="mx-auto max-w-3xl grid grid-cols-6 sm:flex sm:gap-2 sm:px-4 sm:py-2">
+      <ul className="mx-auto max-w-3xl grid grid-cols-7 sm:flex sm:flex-wrap sm:gap-2 sm:px-4 sm:py-2">
         {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (

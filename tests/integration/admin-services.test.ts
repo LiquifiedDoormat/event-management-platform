@@ -135,14 +135,16 @@ describe.skipIf(!hasTestDb)("bus service", () => {
   it("lets only the owner reassign a bus's hotel or coordinator", async () => {
     const admin = await staff("ADMIN");
     const owner = await staff("OWNER");
-    const { busA, hotelB, coordB } = await createTwoHotels();
+    const { busA, busB, hotelB, coordB } = await createTwoHotels();
     await expectError(buses.reassignBusHotel(admin, busA.id, hotelB.id), "forbidden");
     await expectError(buses.assignBusCoordinator(admin, busA.id, coordB.id), "forbidden");
     await buses.reassignBusHotel(owner, busA.id, hotelB.id);
+    // coordB was already busB's coordinator: one bus per coordinator moves them.
     await buses.assignBusCoordinator(owner, busA.id, coordB.id);
     const bus = await buses.getBus(owner, busA.id);
     expect(bus.hotel.id).toBe(hotelB.id);
     expect(bus.coordinator?.id).toBe(coordB.id);
+    expect((await buses.getBus(owner, busB.id)).coordinator).toBeNull();
   });
 
   it("won't deactivate a bus that is on a trip", async () => {

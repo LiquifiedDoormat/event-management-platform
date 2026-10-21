@@ -174,3 +174,15 @@ export async function hotelOptions(actor: Actor) {
     select: { id: true, name: true },
   });
 }
+
+/** Active hotels for dropdowns, with their current cluster (if any) for labeling. */
+export async function hotelOptionsWithCluster(actor: Actor) {
+  requireCan(actor, "dashboard.viewAll");
+  const rows = await prisma.hotel.findMany({
+    where: { isActive: true, eventId: eventOf(actor) },
+    orderBy: { name: "asc" },
+    take: OPTIONS_LIMIT,
+    select: { id: true, name: true, cluster: { select: { name: true } } },
+  });
+  return rows.map(({ cluster, ...h }) => ({ ...h, currentCluster: cluster }));
+}

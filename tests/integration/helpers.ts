@@ -35,7 +35,7 @@ export async function createUser(
   data: { hotelId?: string; status?: "ACTIVE" | "INACTIVE"; eventId?: string; pinHash?: string } = {},
 ) {
   const eventId = data.eventId ?? (await defaultEvent());
-  const member = role === "CUSTOMER" || role === "COORDINATOR";
+  const member = role === "CUSTOMER" || role === "COORDINATOR" || role === "CLUSTER_COORDINATOR";
   const user = await prisma.user.create({
     data: {
       phone: nextPhone(),

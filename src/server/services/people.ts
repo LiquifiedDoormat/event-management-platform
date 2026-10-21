@@ -314,3 +314,16 @@ export async function coordinatorOptions(actor: Actor) {
   });
   return rows.map(({ memberships, ...c }) => ({ ...c, coordinatedHotel: memberships[0]?.hotel ?? null }));
 }
+
+/** Active cluster coordinators of the current event, for dropdowns. */
+export async function clusterCoordinatorOptions(actor: Actor) {
+  if (!can(actor, "dashboard.viewAll")) throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.user.findMany({
+    where: { role: "CLUSTER_COORDINATOR", status: "ACTIVE", memberships: { some: { eventId } } },
+    orderBy: { name: "asc" },
+    take: OPTIONS_LIMIT,
+    select: { id: true, name: true, memberships: { where: { eventId }, select: { cluster: { select: { name: true } } } } },
+  });
+  return rows.map(({ memberships, ...c }) => ({ ...c, coordinatedCluster: memberships[0]?.cluster ?? null }));
+}

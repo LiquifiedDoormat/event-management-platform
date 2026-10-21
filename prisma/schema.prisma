@@ -157,8 +157,9 @@ model Bus {
   registration  String?  @unique
   hotelId       String
   hotel         Hotel    @relation(fields: [hotelId], references: [id], onDelete: Restrict)
-  /// Default coordinator for this bus; the active trip records who is actually on board.
-  coordinatorId String?
+  /// This bus's one responsible coordinator; the active trip records who is actually on
+  /// board. A coordinator is the responsible coordinator of at most one bus (unique).
+  coordinatorId String?  @unique
   coordinator   User?    @relation("BusCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
   routeNotes    String?
   isActive      Boolean  @default(true)
@@ -171,7 +172,6 @@ model Bus {
   statusEvents BusStatusEvent[]
 
   @@index([hotelId, isActive])
-  @@index([coordinatorId])
 }
 
 /// Ordered stops on a bus's current route. Editable as routes change.

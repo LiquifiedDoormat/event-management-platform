@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { bothOrNeither, coordinates, optionalId, optionalText, phone, requiredText } from "./common";
 
+export const clusterInput = z.object({ name: requiredText(120) });
+export type ClusterInput = z.infer<typeof clusterInput>;
+
 export const hotelInput = z
   .object({
     name: requiredText(120),

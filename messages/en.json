@@ -112,7 +112,8 @@
       "staleStatus": "The status was changed on another device. The latest status is now shown; please try again.",
       "tripEnded": "This trip has ended.",
       "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings.",
-      "noEventSelected": "Choose an event first."
+      "noEventSelected": "Choose an event first.",
+      "notActiveClusterCoordinator": "Choose an active cluster coordinator."
     },
     "notFoundHelp": "It may have moved, or you may not have access to it.",
     "pageFailed": "This page could not be loaded",
@@ -126,7 +127,8 @@
     "buses": "Buses",
     "coordinators": "Coord­inators",
     "people": "People",
-    "import": "Import"
+    "import": "Import",
+    "clusters": "Clusters"
   },
   "directory": {
     "search": "Search",
@@ -147,7 +149,8 @@
     "OWNER": "Owner",
     "ADMIN": "Admin",
     "COORDINATOR": "Coordinator",
-    "CUSTOMER": "Attendee"
+    "CUSTOMER": "Attendee",
+    "CLUSTER_COORDINATOR": "Cluster Coordinator"
   },
   "forms": {
     "saving": "Saving…",
@@ -543,5 +546,31 @@
       "invalidRows": "Skipped (errors)",
       "failedRows": "Failed"
     }
+  },
+  "clusters": {
+    "title": "Clusters",
+    "add": "Add cluster",
+    "create": "Create cluster",
+    "intro": "Group hotels for a cluster coordinator's oversight. Optional — a hotel with no cluster is simply ungrouped.",
+    "searchPlaceholder": "Cluster name",
+    "none": "No clusters yet.",
+    "counts": "{hotels, plural, one {# hotel} other {# hotels}} · {coordinators, plural, one {# coordinator} other {# coordinators}}",
+    "name": "Cluster name",
+    "details": "Details",
+    "hotels": "Hotels",
+    "noHotels": "No hotels in this cluster yet.",
+    "hotelSummary": "{buses, plural, one {# bus} other {# buses}} · {coordinators, plural, one {# coordinator} other {# coordinators}}",
+    "addHotel": "Add hotel",
+    "chooseHotel": "Hotel",
+    "choose": "Choose…",
+    "hotelMoveHint": "If the hotel is already in another cluster, it will be moved here.",
+    "remove": "Remove",
+    "coordinators": "Cluster coordinators",
+    "noCoordinators": "No coordinators yet.",
+    "assign": "Save coordinator",
+    "chooseCoordinator": "Coordinator",
+    "coordinatorMoveHint": "If the person already coordinates another cluster, they will be moved here.",
+    "confirmRemoveCoordinator": "Remove {name} as a coordinator of this cluster? They keep their account.",
+    "edit": "Edit cluster"
   }
 }

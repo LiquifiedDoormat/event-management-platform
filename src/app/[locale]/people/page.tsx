@@ -7,7 +7,7 @@ import { param, requireStaff } from "@/lib/utils/page";
 import { Badge, EmptyState, ListCard, PageHeader } from "@/components/ui/Layout";
 import { FilterSelect, Pagination, SearchForm } from "@/components/ui/Directory";
 
-const ROLES = ["OWNER", "ADMIN", "COORDINATOR", "CUSTOMER"] as const;
+const ROLES = ["OWNER", "ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"] as const;
 
 export default async function PeoplePage({ params, searchParams }: PageProps<"/[locale]/people">) {
   const { locale } = await params;

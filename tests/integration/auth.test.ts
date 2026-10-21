@@ -32,6 +32,16 @@ describe.skipIf(!hasTestDb)("PIN sign-in for Owner, Admin and Coordinator", () =
     expect(stored.tokenHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("also signs in a cluster coordinator with phone + PIN (regression: PRIVILEGED list must include CLUSTER_COORDINATOR)", async () => {
+    const eventId = await defaultEvent();
+    const cc = await createUser("CLUSTER_COORDINATOR", { pinHash });
+    expect(await pinStatus({ phone: cc.phone, ip })).toEqual({ status: "enter_pin" });
+    const result = await loginWithPin({ phone: cc.phone, pin: PIN, eventId, ip });
+    expect(result.status).toBe("ok");
+    const session = await validateSession(result.status === "ok" ? result.token : "");
+    expect(session?.user).toMatchObject({ id: cc.id, eventId, role: "CLUSTER_COORDINATOR" });
+  });
+
   it("returns the same generic result for a wrong PIN, unknown number, attendee number or no PIN yet", async () => {
     const eventId = await defaultEvent();
     const admin = await createUser("ADMIN", { pinHash });

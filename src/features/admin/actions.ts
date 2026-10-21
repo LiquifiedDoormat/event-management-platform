@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   busCreateInput,
   busInput,
+  clusterInput,
   hotelInput,
   personCreateInput,
   personUpdateInput,
@@ -18,6 +19,7 @@ import {
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
+import * as clusters from "@/server/services/clusters";
 import * as settings from "@/server/services/settings";
 import { run } from "@/features/run-action";
 import type { ActionState } from "./action-state";
@@ -110,6 +112,32 @@ export async function changeRoleAction(_: ActionState, form: FormData) {
 
 export async function setPersonStatusAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => people.setPersonStatus(u, id.parse(d.id), statusSchema.parse(d.status)));
+}
+
+// ---- Clusters ---------------------------------------------------------------
+
+export async function createClusterAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => `/clusters/${(await clusters.createCluster(u, clusterInput.parse(d))).id}`);
+}
+
+export async function updateClusterAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => clusters.updateCluster(u, id.parse(d.id), clusterInput.parse(d)));
+}
+
+export async function addClusterHotelAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => clusters.addClusterHotel(u, id.parse(d.id), id.parse(d.hotelId)));
+}
+
+export async function removeClusterHotelAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => clusters.removeClusterHotel(u, id.parse(d.id), id.parse(d.hotelId)));
+}
+
+export async function addClusterCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => clusters.addClusterCoordinator(u, id.parse(d.id), id.parse(d.coordinatorId)));
+}
+
+export async function removeClusterCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => clusters.removeClusterCoordinator(u, id.parse(d.id), id.parse(d.coordinatorId)));
 }
 
 // ---- Event settings (Owner) ------------------------------------------------
