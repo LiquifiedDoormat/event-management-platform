@@ -16,7 +16,7 @@ import {
   updateBusAction,
   updateStopAction,
 } from "@/features/admin/actions";
-import { correctStatusAction, endTripAction, startTripAction } from "@/features/trips/actions";
+import { cancelTripAction, correctStatusAction, endTripAction, setDelayedAction, startTripAction } from "@/features/trips/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField } from "@/components/ui/Fields";
 import { Badge, DetailList, MapsLink, PageHeader, Section } from "@/components/ui/Layout";
@@ -70,7 +70,8 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
               t("currentStatus"),
               trip ? (
                 <span key="s">
-                  <Badge tone="ok">{ts(trip.status)}</Badge> {t("since", { time: when(trip.statusChangedAt) })} · {trip.coordinator.name}
+                  <Badge tone="ok">{ts(trip.status)}</Badge> {trip.isDelayed && <Badge tone="warn">⚠ {ttrip("delayed")}</Badge>}{" "}
+                  {t("since", { time: when(trip.statusChangedAt) })} · {trip.coordinator.name}
                 </span>
               ) : (
                 t("noTrip")
@@ -91,13 +92,34 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
                   name="status"
                   label={ttrip("statusTitle")}
                   defaultValue={trip.status}
-                  options={(["BOARDING", "TO_HOTEL", "AT_HOTEL", "TO_STOP", "AT_STOP"] as const).map((s) => ({ value: s, label: ts(s) }))}
+                  options={(["BOARDING_AT_VENUE", "DEPARTED_VENUE", "ARRIVED_AT_HOTEL", "BOARDING_AT_HOTEL", "DEPARTED_HOTEL", "ARRIVED_AT_VENUE"] as const).map((s) => ({
+                    value: s,
+                    label: ts(s),
+                  }))}
                 />
               </ActionForm>
+              <ActionForm
+                action={setDelayedAction}
+                hidden={{ tripId: trip.id, delayed: String(!trip.isDelayed) }}
+                submitLabel={trip.isDelayed ? ttrip("clearDelayed") : ttrip("markDelayed")}
+                tone={trip.isDelayed ? "secondary" : "danger"}
+                inline
+              />
               <ActionForm action={endTripAction} hidden={{ tripId: trip.id }} submitLabel={`⏹ ${ttrip("endTrip")}`} confirmMessage={ttrip("confirmEnd")} tone="danger" />
+              <ActionForm action={cancelTripAction} hidden={{ tripId: trip.id }} submitLabel={ttrip("cancelTrip")} confirmMessage={ttrip("confirmCancel")} tone="danger" />
             </>
           ) : bus.coordinator ? (
-            <ActionForm action={startTripAction} hidden={{ busId: bus.id }} submitLabel={`▶ ${ttrip("startTripFor", { name: bus.coordinator.name })}`} />
+            <ActionForm action={startTripAction} hidden={{ busId: bus.id }} submitLabel={`▶ ${ttrip("startTripFor", { name: bus.coordinator.name })}`} inline>
+              <SelectField
+                name="startStatus"
+                label={ttrip("startDirection")}
+                defaultValue="BOARDING_AT_VENUE"
+                options={[
+                  { value: "BOARDING_AT_VENUE", label: ts("BOARDING_AT_VENUE") },
+                  { value: "BOARDING_AT_HOTEL", label: ts("BOARDING_AT_HOTEL") },
+                ]}
+              />
+            </ActionForm>
           ) : (
             <p>{ttrip("needsCoordinator")}</p>
           )}

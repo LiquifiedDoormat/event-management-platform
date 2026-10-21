@@ -18,13 +18,13 @@ describe.skipIf(!hasTestDb)("attendee transport views", () => {
   it("shows an attendee their own bus with trip, location and stops", async () => {
     const { guestA, busA, coordA } = await createTwoHotels();
     await prisma.busStop.create({ data: { busId: busA.id, sequence: 1, name: "Gate 2", latitude: 12.97, longitude: 77.59 } });
-    const trip = await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "TO_STOP", sharingLocation: true } });
+    const trip = await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "DEPARTED_HOTEL", sharingLocation: true } });
     await prisma.busLocation.create({
       data: { busId: busA.id, tripId: trip.id, latitude: 12.98, longitude: 77.6, recordedAt: new Date() },
     });
 
     const { bus, settings } = await getTrackedBus(guestA, busA.id);
-    expect(bus.trips[0]).toMatchObject({ status: "TO_STOP", coordinator: { name: coordA.name, phone: coordA.phone } });
+    expect(bus.trips[0]).toMatchObject({ status: "DEPARTED_HOTEL", coordinator: { name: coordA.name, phone: coordA.phone } });
     expect(bus.location?.latitude).toBe(12.98);
     expect(bus.stops.map((s) => s.name)).toEqual(["Gate 2"]);
     expect(settings.staleLocationSeconds).toBe(120);
@@ -68,8 +68,8 @@ describe.skipIf(!hasTestDb)("attendee transport views", () => {
 
   it("reports the active trip's status on the customer home", async () => {
     const { guestA, busA, coordA } = await createTwoHotels();
-    await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "BOARDING" } });
+    await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "BOARDING_AT_VENUE" } });
     const home = await getCustomerHome(asSession(guestA));
-    expect(home.hotel?.buses[0].trips[0].status).toBe("BOARDING");
+    expect(home.hotel?.buses[0].trips[0].status).toBe("BOARDING_AT_VENUE");
   });
 });

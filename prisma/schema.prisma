@@ -30,12 +30,18 @@ enum Locale {
 }
 
 /// Operational status shown to attendees. Set by the trip coordinator.
+/// The bus's leg within one trip. A trip may start at either boarding point
+/// (venue-bound in the evening, hotel-bound in the morning) and then only
+/// advances forward through its own direction — see server/services/trips.ts
+/// for the enforced transition table. Delayed/cancelled are not states here;
+/// they're Trip.isDelayed/Trip.cancelled, since either can apply at any leg.
 enum BusStatus {
-  BOARDING
-  TO_HOTEL
-  AT_HOTEL
-  TO_STOP
-  AT_STOP
+  BOARDING_AT_VENUE
+  DEPARTED_VENUE
+  ARRIVED_AT_HOTEL
+  BOARDING_AT_HOTEL
+  DEPARTED_HOTEL
+  ARRIVED_AT_VENUE
 }
 
 /// Every person with an account: owner, admins, coordinators, attendees.
@@ -200,10 +206,15 @@ model Trip {
   bus             Bus       @relation(fields: [busId], references: [id], onDelete: Restrict)
   coordinatorId   String
   coordinator     User      @relation(fields: [coordinatorId], references: [id], onDelete: Restrict)
-  status          BusStatus @default(BOARDING)
+  status          BusStatus @default(BOARDING_AT_VENUE)
   statusChangedAt DateTime  @default(now())
   /// Incremented on every status change; clients send it back to reject stale updates.
   statusVersion   Int       @default(0)
+  /// Independent of status/leg: can be set while on any leg, cleared when it clears.
+  isDelayed       Boolean   @default(false)
+  /// Trip ended because it was called off, not completed. endedAt is set either way;
+  /// this distinguishes why, for history/dashboard purposes.
+  cancelled       Boolean   @default(false)
   sharingLocation Boolean   @default(false)
   startedAt       DateTime  @default(now())
   endedAt         DateTime?
@@ -251,6 +262,8 @@ model BusStatusEvent {
   trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
   busId       String
   bus         Bus       @relation(fields: [busId], references: [id], onDelete: Cascade)
+  /// The status before this change (null for a trip's first event — there is no "from").
+  fromStatus  BusStatus?
   status      BusStatus
   changedById String?
   changedBy   User?     @relation(fields: [changedById], references: [id], onDelete: SetNull)

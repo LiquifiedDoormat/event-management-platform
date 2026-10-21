@@ -62,7 +62,7 @@ export async function listBuses(
       isActive: true,
       hotel: { select: { id: true, name: true } },
       coordinator: { select: { id: true, name: true } },
-      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true } },
+      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, isDelayed: true } },
     },
   });
   return toPage(rows);
@@ -89,7 +89,7 @@ export async function getBus(actor: Actor, id: string) {
       trips: {
         where: { endedAt: null },
         take: 1,
-        select: { id: true, status: true, statusVersion: true, statusChangedAt: true, coordinator: { select: { id: true, name: true } } },
+        select: { id: true, status: true, statusVersion: true, statusChangedAt: true, isDelayed: true, coordinator: { select: { id: true, name: true } } },
       },
       location: { select: { latitude: true, longitude: true, recordedAt: true } },
     },

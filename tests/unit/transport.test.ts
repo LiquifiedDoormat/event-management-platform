@@ -17,11 +17,12 @@ describe("locationFreshness", () => {
 describe("STATUS_KIND", () => {
   it("groups every status as boarding, moving or arrived", () => {
     expect(STATUS_KIND).toEqual({
-      BOARDING: "boarding",
-      TO_HOTEL: "moving",
-      TO_STOP: "moving",
-      AT_HOTEL: "arrived",
-      AT_STOP: "arrived",
+      BOARDING_AT_VENUE: "boarding",
+      DEPARTED_VENUE: "moving",
+      ARRIVED_AT_HOTEL: "arrived",
+      BOARDING_AT_HOTEL: "boarding",
+      DEPARTED_HOTEL: "moving",
+      ARRIVED_AT_VENUE: "arrived",
     });
   });
 });

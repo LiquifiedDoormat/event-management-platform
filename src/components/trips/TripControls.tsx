@@ -6,9 +6,19 @@ import { useRouter } from "@/i18n/navigation";
 import type { BusStatus } from "@/generated/prisma/enums";
 import { STATUS_ICON, STATUS_KIND } from "@/lib/transport/status";
 import { useGeolocationSharing } from "@/hooks/useGeolocationSharing";
-import { changeStatusDirect, endTripDirect, setSharingDirect } from "@/features/trips/actions";
+import { cancelTripDirect, changeStatusDirect, endTripDirect, setDelayedDirect, setSharingDirect } from "@/features/trips/actions";
 
-const STATUSES: BusStatus[] = ["BOARDING", "TO_HOTEL", "AT_HOTEL", "TO_STOP", "AT_STOP"];
+/** Only the next valid step(s) from the current status are offered (server enforces this too). */
+const FORWARD_TRANSITIONS: Record<BusStatus, BusStatus[]> = {
+  BOARDING_AT_VENUE: ["DEPARTED_VENUE"],
+  DEPARTED_VENUE: ["ARRIVED_AT_HOTEL"],
+  ARRIVED_AT_HOTEL: ["BOARDING_AT_HOTEL"],
+  BOARDING_AT_HOTEL: ["DEPARTED_HOTEL"],
+  DEPARTED_HOTEL: ["ARRIVED_AT_VENUE"],
+  ARRIVED_AT_VENUE: [],
+};
+/** Marking the bus arrived ends that leg for attendees watching — ask for a deliberate confirmation. */
+const CONFIRM_STATUSES: BusStatus[] = ["ARRIVED_AT_HOTEL", "ARRIVED_AT_VENUE"];
 /** Readings less precise than this are flagged (typical of laptops/Wi-Fi positioning). */
 const POOR_ACCURACY_M = 100;
 const noop = () => () => {};
@@ -18,10 +28,11 @@ type Props = {
   initialStatus: BusStatus;
   initialVersion: number;
   initialChangedAt: string;
+  initialDelayed: boolean;
 };
 
 /** Coordinator's trip screen: big status buttons, GPS sharing, end trip. */
-export function TripControls({ tripId, initialStatus, initialVersion, initialChangedAt }: Props) {
+export function TripControls({ tripId, initialStatus, initialVersion, initialChangedAt, initialDelayed }: Props) {
   const t = useTranslations("trip");
   const ts = useTranslations("busStatus");
   const te = useTranslations();
@@ -31,6 +42,7 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
   const [status, setStatus] = useState(initialStatus);
   const [version, setVersion] = useState(initialVersion);
   const [changedAt, setChangedAt] = useState(new Date(initialChangedAt));
+  const [delayed, setDelayed] = useState(initialDelayed);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const goHome = () => router.replace("/coordinator");
@@ -47,6 +59,7 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
 
   function choose(next: BusStatus) {
     if (pending || next === status) return;
+    if (CONFIRM_STATUSES.includes(next) && !window.confirm(t("confirmArrived", { status: ts(next) }))) return;
     startTransition(async () => {
       const result = await changeStatusDirect(tripId, next, version);
       if (result.ok) {
@@ -71,11 +84,30 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
     }
   }
 
+  function toggleDelayed() {
+    const next = !delayed;
+    startTransition(async () => {
+      const result = await setDelayedDirect(tripId, next);
+      if (result.ok) setDelayed(next);
+      else setMessage({ tone: "error", text: te(result.message) });
+    });
+  }
+
   function endTrip() {
     if (!window.confirm(t("confirmEnd"))) return;
     startTransition(async () => {
       stop();
       const result = await endTripDirect(tripId);
+      if (result.ok) goHome();
+      else setMessage({ tone: "error", text: te(result.message) });
+    });
+  }
+
+  function cancelTrip() {
+    if (!window.confirm(t("confirmCancel"))) return;
+    startTransition(async () => {
+      stop();
+      const result = await cancelTripDirect(tripId);
       if (result.ok) goHome();
       else setMessage({ tone: "error", text: te(result.message) });
     });
@@ -99,30 +131,43 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
         <h2 id="status-heading" className="text-xl font-semibold">
           {t("statusTitle")}
         </h2>
-        <p className="text-muted">
-          {t("currentSince", { time: format.dateTime(changedAt, { timeStyle: "short" }), ago: format.relativeTime(changedAt, now) })}
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {STATUSES.map((s) => {
-            const current = s === status;
-            return (
+        <div className="min-h-16 rounded-xl border-2 border-brand bg-brand px-4 py-3 text-brand-ink">
+          <p className="text-xl font-bold">
+            <span aria-hidden="true">{STATUS_ICON[STATUS_KIND[status]]} </span>
+            {ts(status)}
+          </p>
+          <p className="text-base font-semibold">
+            {t("currentSince", { time: format.dateTime(changedAt, { timeStyle: "short" }), ago: format.relativeTime(changedAt, now) })}
+          </p>
+        </div>
+        {FORWARD_TRANSITIONS[status].length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {FORWARD_TRANSITIONS[status].map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => choose(s)}
                 disabled={pending}
-                aria-pressed={current}
-                className={`min-h-16 rounded-xl border-2 px-4 text-left text-xl font-bold disabled:opacity-70 ${
-                  current ? "border-brand bg-brand text-brand-ink" : "border-line bg-surface text-ink"
-                }`}
+                className="min-h-16 rounded-xl border-2 border-line bg-surface px-4 text-left text-xl font-bold text-ink disabled:opacity-70"
               >
                 <span aria-hidden="true">{STATUS_ICON[STATUS_KIND[s]]} </span>
-                {ts(s)}
-                {current && <span className="block text-base font-semibold">✓ {t("current")}</span>}
+                {t("nextStatus", { status: ts(s) })}
               </button>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted">{t("endOfLine")}</p>
+        )}
+        <button
+          type="button"
+          onClick={toggleDelayed}
+          disabled={pending}
+          className={`min-h-14 self-start rounded-lg border-2 px-5 text-lg font-semibold disabled:opacity-60 ${
+            delayed ? "border-warn bg-amber-50 text-warn" : "border-line bg-surface text-ink"
+          }`}
+        >
+          ⚠ {delayed ? t("clearDelayed") : t("markDelayed")}
+        </button>
       </section>
 
       <section className="flex flex-col gap-3 rounded-lg border-2 border-line p-4" aria-labelledby="gps-heading">
@@ -161,14 +206,24 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
         </p>
       </section>
 
-      <button
-        type="button"
-        onClick={endTrip}
-        disabled={pending}
-        className="min-h-14 self-start rounded-lg border-2 border-danger px-5 text-lg font-semibold text-danger disabled:opacity-60"
-      >
-        ⏹ {t("endTrip")}
-      </button>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={endTrip}
+          disabled={pending}
+          className="min-h-14 rounded-lg border-2 border-danger px-5 text-lg font-semibold text-danger disabled:opacity-60"
+        >
+          ⏹ {t("endTrip")}
+        </button>
+        <button
+          type="button"
+          onClick={cancelTrip}
+          disabled={pending}
+          className="min-h-14 rounded-lg border-2 border-line px-5 text-lg font-semibold text-muted disabled:opacity-60"
+        >
+          ✕ {t("cancelTrip")}
+        </button>
+      </div>
     </div>
   );
 }

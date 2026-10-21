@@ -5,6 +5,7 @@ import { getCoordinatorOverview } from "@/server/services/dashboard";
 import { activeTripsFor } from "@/server/services/trips";
 import { startTripAction } from "@/features/trips/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
+import { SelectField } from "@/components/ui/Fields";
 import { Badge, Section } from "@/components/ui/Layout";
 
 export default async function CoordinatorHome({ params }: PageProps<"/[locale]/coordinator">) {
@@ -35,7 +36,8 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
         <Section title={tt("activeTrip")}>
           <p className="text-2xl font-bold">🚌 {active.bus.label}</p>
           <p>
-            <Badge tone="ok">{ts(active.status)}</Badge> {active.sharingLocation ? `· 📡 ${tt("sharingOn")}` : `· ⏸ ${tt("sharingOff")}`}
+            <Badge tone="ok">{ts(active.status)}</Badge> {active.isDelayed && <Badge tone="warn">⚠ {tt("delayed")}</Badge>}{" "}
+            {active.sharingLocation ? `· 📡 ${tt("sharingOn")}` : `· ⏸ ${tt("sharingOff")}`}
           </p>
           <Link
             href={`/coordinator/trip/${active.id}`}
@@ -56,7 +58,19 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
                 <p className="text-xl font-semibold">
                   🚌 {b.label} <span className="text-base font-normal text-muted">· {b.hotel.name}</span>
                 </p>
-                {!active && <ActionForm action={startTripAction} hidden={{ busId: b.id }} submitLabel={`▶ ${tt("startTrip")}`} />}
+                {!active && (
+                  <ActionForm action={startTripAction} hidden={{ busId: b.id }} submitLabel={`▶ ${tt("startTrip")}`} inline>
+                    <SelectField
+                      name="startStatus"
+                      label={tt("startDirection")}
+                      defaultValue="BOARDING_AT_VENUE"
+                      options={[
+                        { value: "BOARDING_AT_VENUE", label: ts("BOARDING_AT_VENUE") },
+                        { value: "BOARDING_AT_HOTEL", label: ts("BOARDING_AT_HOTEL") },
+                      ]}
+                    />
+                  </ActionForm>
+                )}
                 <Link href={`/track/${b.id}`} className="text-brand font-semibold underline">
                   👁 {tt("viewAsAttendee")}
                 </Link>

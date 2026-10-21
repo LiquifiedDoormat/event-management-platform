@@ -7,6 +7,7 @@ export type BusLiveSnapshot = {
     status: BusStatus;
     statusChangedAt: string;
     sharingLocation: boolean;
+    isDelayed: boolean;
   } | null;
   location: { latitude: number; longitude: number; accuracy: number | null; recordedAt: string } | null;
 };

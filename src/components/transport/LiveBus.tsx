@@ -14,8 +14,21 @@ const KIND_STYLE = {
   arrived: "border-ok bg-green-50 text-ok",
 } as const;
 
-function StatusPanel({ status, since, now, large }: { status: BusStatus | null; since: Date | null; now: Date; large: boolean }) {
+function StatusPanel({
+  status,
+  since,
+  now,
+  large,
+  delayed,
+}: {
+  status: BusStatus | null;
+  since: Date | null;
+  now: Date;
+  large: boolean;
+  delayed?: boolean;
+}) {
   const t = useTranslations("transport");
+  const tt = useTranslations("trip");
   const ts = useTranslations("busStatus");
   const format = useFormatter();
   const text = large ? "text-2xl" : "text-lg";
@@ -27,6 +40,7 @@ function StatusPanel({ status, since, now, large }: { status: BusStatus | null; 
         <span aria-hidden="true">{STATUS_ICON[kind]} </span>
         {ts(status)}
       </p>
+      {delayed && <p className="font-bold text-warn">⚠ {tt("delayed")}</p>}
       {since && (
         <p className="text-ink">{t("statusSince", { time: format.dateTime(since, { timeStyle: "short" }), ago: format.relativeTime(since, now) })}</p>
       )}
@@ -62,7 +76,13 @@ export function LiveBusSummary({ busId, initial, staleSeconds }: { busId: string
   const recordedAt = snapshot.location ? new Date(snapshot.location.recordedAt) : null;
   return (
     <div aria-live="polite" className="flex flex-col gap-2">
-      <StatusPanel status={snapshot.trip?.status ?? null} since={snapshot.trip ? new Date(snapshot.trip.statusChangedAt) : null} now={now} large={false} />
+      <StatusPanel
+        status={snapshot.trip?.status ?? null}
+        since={snapshot.trip ? new Date(snapshot.trip.statusChangedAt) : null}
+        now={now}
+        large={false}
+        delayed={snapshot.trip?.isDelayed}
+      />
       {snapshot.trip && <FreshnessNote freshness={locationFreshness(recordedAt, staleSeconds, now.getTime())} recordedAt={recordedAt} now={now} />}
     </div>
   );
@@ -107,7 +127,13 @@ export function LiveBusDetail({
   return (
     <div className="flex flex-col gap-5">
       <div aria-live="polite">
-        <StatusPanel status={snapshot.trip?.status ?? null} since={snapshot.trip ? new Date(snapshot.trip.statusChangedAt) : null} now={now} large />
+        <StatusPanel
+          status={snapshot.trip?.status ?? null}
+          since={snapshot.trip ? new Date(snapshot.trip.statusChangedAt) : null}
+          now={now}
+          large
+          delayed={snapshot.trip?.isDelayed}
+        />
       </div>
       <section className="rounded-lg border border-line p-4 flex flex-col gap-3">
         <h2 className="text-xl font-semibold">{t("location")}</h2>

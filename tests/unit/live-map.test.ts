@@ -5,9 +5,10 @@ import type { MapPoint } from "@/lib/maps/config";
 import type { BusLiveSnapshot } from "@/lib/realtime/types";
 
 const trip = (overrides: Partial<NonNullable<BusLiveSnapshot["trip"]>> = {}) => ({
-  status: "TO_HOTEL" as const,
+  status: "DEPARTED_VENUE" as const,
   statusChangedAt: "2026-10-20T10:00:00.000Z",
   sharingLocation: true,
+  isDelayed: false,
   ...overrides,
 });
 

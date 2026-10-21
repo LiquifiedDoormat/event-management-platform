@@ -83,11 +83,12 @@
     "noClusterHotels": "No hotels are in this cluster yet."
   },
   "busStatus": {
-    "BOARDING": "Boarding",
-    "TO_HOTEL": "On the way to hotel",
-    "AT_HOTEL": "Reached hotel",
-    "TO_STOP": "On the way to bus stop",
-    "AT_STOP": "Reached bus stop"
+    "BOARDING_AT_VENUE": "Boarding at venue",
+    "DEPARTED_VENUE": "On the way to hotel",
+    "ARRIVED_AT_HOTEL": "Reached hotel",
+    "BOARDING_AT_HOTEL": "Boarding at hotel",
+    "DEPARTED_HOTEL": "On the way to venue",
+    "ARRIVED_AT_VENUE": "Reached venue"
   },
   "errors": {
     "notFound": "Page not found.",
@@ -113,7 +114,8 @@
       "tripEnded": "This trip has ended.",
       "clockAhead": "Your phone's clock looks wrong. Please check the date and time settings.",
       "noEventSelected": "Choose an event first.",
-      "notActiveClusterCoordinator": "Choose an active cluster coordinator."
+      "notActiveClusterCoordinator": "Choose an active cluster coordinator.",
+      "invalidTransition": "That status change isn't allowed from the current status."
     },
     "notFoundHelp": "It may have moved, or you may not have access to it.",
     "pageFailed": "This page could not be loaded",
@@ -357,7 +359,16 @@
     "needsCoordinator": "Assign a coordinator to this bus before starting a trip.",
     "signedOut": "You've been signed out. Sign in again to continue sharing.",
     "insecure": "Location sharing needs a secure (https://) page. Open the app's normal web address.",
-    "poorAccuracy": "Location is approximate (more than 100 m). This is common on laptops or indoors without GPS. Use a phone with GPS outdoors for accurate tracking."
+    "poorAccuracy": "Location is approximate (more than 100 m). This is common on laptops or indoors without GPS. Use a phone with GPS outdoors for accurate tracking.",
+    "delayed": "Delayed",
+    "markDelayed": "Mark delayed",
+    "clearDelayed": "Clear delayed",
+    "cancelTrip": "Cancel trip",
+    "confirmCancel": "Cancel this trip? Location sharing will stop and attendees will see the bus is not running.",
+    "confirmArrived": "Mark the bus as \"{status}\"? Attendees watching this leg will see it as finished.",
+    "nextStatus": "{status}",
+    "endOfLine": "This is the end of the line for this trip. End it, or start a new one for another round.",
+    "startDirection": "Starting point"
   },
   "settings": {
     "title": "Event settings",
