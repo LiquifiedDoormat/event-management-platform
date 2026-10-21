@@ -8,6 +8,7 @@ import {
   canEditPerson,
   canResetPin,
   canSetAttendeeHotel,
+  canViewAddress,
   canViewPerson,
   isStaff,
   type Actor,
@@ -115,6 +116,36 @@ export async function listPeople(
 }
 
 /**
+ * Full attendee export for CSV download — every active attendee in the
+ * event, unpaginated, including the postal address (PII; this is why the
+ * route calling this is staff-only, same gate as `dashboard.viewAll`).
+ */
+export async function exportAttendees(actor: Actor) {
+  if (!can(actor, "dashboard.viewAll")) throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.user.findMany({
+    where: { role: "CUSTOMER", status: "ACTIVE", memberships: { some: { eventId } } },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: {
+      name: true,
+      phone: true,
+      address: true,
+      memberships: {
+        where: { eventId },
+        select: { hotel: { select: { name: true } }, zone: { select: { name: true } } },
+      },
+    },
+  });
+  return rows.map((r) => ({
+    name: r.name,
+    phone: r.phone,
+    hotel: r.memberships[0]?.hotel?.name ?? "",
+    zone: r.memberships[0]?.zone?.name ?? "",
+    address: r.address ?? "",
+  }));
+}
+
+/**
  * Coordinator's attendee list: active attendees of the hotels the coordinator
  * is responsible for in the current event. Filtering is done in the database.
  */
@@ -146,6 +177,7 @@ export async function getPerson(actor: Actor, id: string) {
       id: true,
       name: true,
       phone: true,
+      address: true,
       role: true,
       status: true,
       preferredLocale: true,
@@ -165,9 +197,12 @@ export async function getPerson(actor: Actor, id: string) {
     },
   });
   if (!person) throw notFound();
-  const { pinHash, pinLockedUntil, ...rest } = shape(person);
+  const { pinHash, pinLockedUntil, address, ...rest } = shape(person);
   const result = {
     ...rest,
+    // PII, more sensitive than name/phone: never sent to the client at all
+    // unless the viewer is allowed to see it, not just hidden in the UI.
+    address: canViewAddress(actor, person.id) ? address : undefined,
     hotelId: rest.hotel?.id ?? null,
     zoneId: rest.zone?.id ?? null,
     // PIN status only (never the hash), for privileged accounts.
@@ -211,7 +246,13 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
       return { id: existing.id, addedExisting: true };
     }
     const user = await tx.user.create({
-      data: { name: input.name, phone: input.phone, role: input.role, ...(member ? { memberships: { create: { eventId, hotelId } } } : {}) },
+      data: {
+        name: input.name,
+        phone: input.phone,
+        role: input.role,
+        address: input.role === "CUSTOMER" ? (input.address ?? null) : null,
+        ...(member ? { memberships: { create: { eventId, hotelId } } } : {}),
+      },
       select: { id: true },
     });
     await audit(tx, actor, "person.create", "User", user.id, { role: input.role, eventId: member ? eventId : null, hotelId });
@@ -225,7 +266,7 @@ export async function updatePerson(actor: Actor, id: string, input: PersonUpdate
     return await prisma.$transaction(async (tx) => {
       const target = await findInEvent(tx, id, eventOf(actor));
       if (!can(actor, "person.update") || !canEditPerson(actor, target)) throw forbidden();
-      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone } });
+      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null } });
       const phoneChanged = target.phone !== input.phone;
       if (phoneChanged) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
       await audit(tx, actor, "person.update", "User", id, { phoneChanged });

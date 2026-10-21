@@ -178,6 +178,15 @@ export function canViewPerson(
   return false;
 }
 
+/**
+ * An attendee's postal address (PII, more sensitive than name/phone): the
+ * attendee themselves, or Owner/Admin — never a hotel/cluster coordinator,
+ * even though they can otherwise view the same person's details.
+ */
+export function canViewAddress(actor: Actor, targetId: string): boolean {
+  return isStaff(actor) || actor.id === targetId;
+}
+
 // ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------

@@ -9,14 +9,14 @@ export const IMPORT_ENTITIES: ImportEntity[] = ["hotels", "coordinators", "atten
 export const IMPORT_COLUMNS: Record<ImportEntity, { required: string[]; optional: string[] }> = {
   hotels: { required: ["name", "address"], optional: ["latitude", "longitude", "notes"] },
   coordinators: { required: ["name", "phone"], optional: ["hotelName"] },
-  attendees: { required: ["name", "phone"], optional: ["hotelName"] },
+  attendees: { required: ["name", "phone"], optional: ["hotelName", "address"] },
   buses: { required: ["label", "hotelName"], optional: ["registration", "routeNotes", "coordinatorPhone"] },
 };
 
 const SAMPLE_ROWS: Record<ImportEntity, string[][]> = {
   hotels: [["Grand Palace", "12 MG Road, Bengaluru", "12.9716", "77.5946", "Near the lake entrance"]],
   coordinators: [["Asha Rao", "9876543210", "Grand Palace"]],
-  attendees: [["Vikram Shah", "9876500001", "Grand Palace"]],
+  attendees: [["Vikram Shah", "9876500001", "Grand Palace", "12 MG Road, Bengaluru 560001"]],
   buses: [["Bus 1", "Grand Palace", "KA01AB1234", "Departs 8:30 AM", "9876543210"]],
 };
 

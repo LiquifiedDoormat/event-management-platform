@@ -1,11 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getApiUser } from "@/lib/auth/current-user";
 import { IMPORT_ENTITIES, templateRows, type ImportEntity } from "@/lib/import/entities";
-
-function toCsv(rows: string[][]): string {
-  const esc = (c: string) => (/[",\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
-  return `${rows.map((r) => r.map(esc).join(",")).join("\r\n")}\r\n`;
-}
+import { toCsv } from "@/lib/csv";
 
 /** Downloadable sample CSV (header + one example row) for a bulk-import entity. Staff only. */
 export async function GET(req: NextRequest) {

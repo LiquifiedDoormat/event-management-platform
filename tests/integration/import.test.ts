@@ -159,6 +159,17 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
       expect(user?.memberships[0]).toMatchObject({ eventId, hotelId: hotelA.id });
     });
 
+    it("imports an attendee's postal address when the column is present", async () => {
+      const { eventId, hotelA } = await createTwoHotels();
+      const admin = await staff("ADMIN", eventId);
+      const phone1 = nextPhone().slice(3);
+      const data = sheet(["name", "phone", "hotelName", "address"], [["Vikram Shah", phone1, "Hotel A", "12 MG Road, Bengaluru"]]);
+      const result = await commitImport(admin, "attendees", data);
+      expect(result).toMatchObject({ created: 1, failed: [] });
+      const user = await prisma.user.findFirst({ where: { name: "Vikram Shah" } });
+      expect(user?.address).toBe("12 MG Road, Bengaluru");
+    });
+
     it("rejects coordinator import from an Admin (Owner only)", async () => {
       const admin = await staff("ADMIN");
       await expect(commitImport(admin, "coordinators", sheet(["name", "phone"], [["Asha Rao", "9876543210"]]))).rejects.toBeInstanceOf(

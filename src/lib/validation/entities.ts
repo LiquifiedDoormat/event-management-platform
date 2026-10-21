@@ -54,10 +54,11 @@ export const personCreateInput = z.object({
   phone,
   role: z.enum(["ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"]),
   hotelId: optionalId,
+  address: optionalText(2000),
 });
 export type PersonCreateInput = z.infer<typeof personCreateInput>;
 
-export const personUpdateInput = z.object({ name: requiredText(120), phone });
+export const personUpdateInput = z.object({ name: requiredText(120), phone, address: optionalText(2000) });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
 
 export const peopleFilter = z.object({

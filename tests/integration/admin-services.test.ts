@@ -177,6 +177,19 @@ describe.skipIf(!hasTestDb)("people service", () => {
     );
   });
 
+  it("stores an attendee's address but only shows it to staff and the attendee themselves", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA, coordA } = await createTwoHotels();
+    const input = personCreateInput.parse({ name: "Addr Guest", phone: "98111 55555", role: "CUSTOMER", hotelId: hotelA.id, address: "221B Baker St" });
+    const { id } = await people.createPerson(admin, input);
+    const guest = { id, role: "CUSTOMER" as const, hotelId: hotelA.id, eventId };
+
+    expect((await prisma.user.findUniqueOrThrow({ where: { id } })).address).toBe("221B Baker St");
+    expect((await people.getPerson(admin, id)).address).toBe("221B Baker St");
+    expect((await people.getPerson(guest, id)).address).toBe("221B Baker St");
+    expect((await people.getPerson(coordA, id)).address).toBeUndefined();
+  });
+
   it("never lets anyone create an owner through the app", () => {
     expect(personCreateInput.safeParse({ name: "X", phone: "98111 44444", role: "OWNER" }).success).toBe(false);
   });

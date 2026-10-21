@@ -6,6 +6,7 @@ import { peopleFilter } from "@/lib/validation/entities";
 import { param, requireStaff } from "@/lib/utils/page";
 import { Badge, EmptyState, ListCard, PageHeader } from "@/components/ui/Layout";
 import { FilterSelect, Pagination, SearchForm } from "@/components/ui/Directory";
+import { ExportAttendeesLink } from "@/components/people/ExportAttendeesLink";
 
 const ROLES = ["OWNER", "ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"] as const;
 
@@ -29,6 +30,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps<"/[
   return (
     <section className="flex flex-col gap-5">
       <PageHeader title={t("title")} action={assignableRoles(user).length ? { href: "/people/new", label: t("add") } : undefined} />
+      <ExportAttendeesLink label={t("exportAttendees")} />
       <SearchForm q={q} placeholder={t("searchPlaceholder")} activeFilters={[filter.role, filter.status, filter.hotelId].filter(Boolean).length}>
         <FilterSelect name="role" label={t("role")} value={filter.role} allLabel={td("all")} options={ROLES.map((r) => ({ value: r, label: tr(r) }))} />
         <FilterSelect name="hotelId" label={t("hotel")} value={filter.hotelId} allLabel={td("all")} options={hotels.map((h) => ({ value: h.id, label: h.name }))} />
