@@ -14,6 +14,9 @@ export type ZoneInput = z.infer<typeof zoneInput>;
 export const gateInput = z.object({ name: requiredText(120), notes: optionalText(2000), zoneId: optionalId });
 export type GateInput = z.infer<typeof gateInput>;
 
+export const checkTypeSchema = z.enum(["CHECK_IN", "CHECK_OUT"]);
+export const boardTypeSchema = z.enum(["BOARD", "DEPART"]);
+
 export const hotelInput = z
   .object({
     name: requiredText(120),

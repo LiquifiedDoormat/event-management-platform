@@ -12,10 +12,11 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
   const { locale } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale, ["COORDINATOR"]);
-  const [t, tt, ts, { hotel, buses }, trips] = await Promise.all([
+  const [t, tt, ts, ta, { hotel, buses }, trips] = await Promise.all([
     getTranslations("dashboard"),
     getTranslations("trip"),
     getTranslations("busStatus"),
+    getTranslations("attendance"),
     getCoordinatorOverview(user),
     activeTripsFor(user),
   ]);
@@ -73,6 +74,9 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
                 )}
                 <Link href={`/track/${b.id}`} className="text-brand font-semibold underline">
                   👁 {tt("viewAsAttendee")}
+                </Link>
+                <Link href={`/coordinator/manifest/${b.id}`} className="text-brand font-semibold underline">
+                  📋 {ta("manifestTitle")}
                 </Link>
               </li>
             ))}

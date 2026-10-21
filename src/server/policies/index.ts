@@ -45,6 +45,7 @@ export type Action =
   | "zone.deactivate"
   | "zone.manageGates"
   | "zone.manageAssignments"
+  | "attendance.checkInOut"
   | "bus.create"
   | "bus.update"
   | "bus.editStops"
@@ -84,6 +85,9 @@ const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "zone.deactivate",
   "zone.manageGates",
   "zone.manageAssignments",
+  // Venue check-in/out is a staff (gate-desk) action; boarding/departure is
+  // recorded by the trip's own coordinator — see canRecordBoarding below.
+  "attendance.checkInOut",
   "bus.create",
   "bus.update",
   "bus.editStops",
@@ -191,5 +195,10 @@ export function canChangeStatus(actor: Actor, trip: { coordinatorId: string; end
 
 /** Starting a trip: staff, or a coordinator for a bus they are designated to. */
 export function canStartTrip(actor: Actor, scope: Scope, busId: string): boolean {
+  return can(actor, "trip.manage") || (actor.role === "COORDINATOR" && scope.operableBusIds.has(busId));
+}
+
+/** Boarding/departure attendance events: staff, or a coordinator for a bus they operate. */
+export function canRecordBoarding(actor: Actor, scope: Scope, busId: string): boolean {
   return can(actor, "trip.manage") || (actor.role === "COORDINATOR" && scope.operableBusIds.has(busId));
 }

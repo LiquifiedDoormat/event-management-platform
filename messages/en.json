@@ -135,7 +135,8 @@
       "noEventSelected": "Choose an event first.",
       "notActiveClusterCoordinator": "Choose an active cluster coordinator.",
       "invalidTransition": "That status change isn't allowed from the current status.",
-      "zoneInUse": "This zone still has attendees assigned to it. Reassign them first."
+      "zoneInUse": "This zone still has attendees assigned to it. Reassign them first.",
+      "attendeeWrongHotel": "This attendee is not staying at this bus's hotel."
     },
     "notFoundHelp": "It may have moved, or you may not have access to it.",
     "pageFailed": "This page could not be loaded",
@@ -635,5 +636,26 @@
     "deactivate": "Deactivate zone",
     "activate": "Reactivate zone",
     "confirmDeactivate": "Deactivate this zone? It will be hidden from lists."
+  },
+  "attendance": {
+    "title": "Attendance",
+    "statusCheckedIn": "Checked in at {time}",
+    "statusNotCheckedIn": "Not checked in",
+    "checkIn": "Check in",
+    "checkOut": "Check out",
+    "history": "{count, plural, one {# record} other {# records}}",
+    "by": "recorded by {name}",
+    "type": {
+      "CHECK_IN": "Checked in",
+      "CHECK_OUT": "Checked out",
+      "BOARD": "Boarded",
+      "DEPART": "Departed"
+    },
+    "manifestTitle": "Boarding list",
+    "noAttendees": "No attendees for this bus's hotel yet.",
+    "board": "Board",
+    "depart": "Depart",
+    "boarded": "Boarded",
+    "notBoarded": "Not boarded"
   }
 }

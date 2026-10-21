@@ -6,7 +6,8 @@ import { assignableRoles, can, canEditPerson, canResetPin, canSetAttendeeHotel }
 import { getPerson } from "@/server/services/people";
 import { hotelOptions } from "@/server/services/hotels";
 import { zoneOptions } from "@/server/services/zones";
-import { changeRoleAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updatePersonAction } from "@/features/admin/actions";
+import { getAttendanceTrail } from "@/server/services/attendance";
+import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updatePersonAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, PageHeader, Section } from "@/components/ui/Layout";
@@ -22,15 +23,18 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   const canRole = !isSelf && can(user, "person.changeRole") && canEditPerson(user, person);
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
   const canPin = canResetPin(user, person);
-  const [t, tc, tr, ts, tz, format, hotels, zones] = await Promise.all([
+  const canCheckInOut = person.role === "CUSTOMER" && can(user, "attendance.checkInOut");
+  const [t, tc, tr, ts, tz, ta, format, hotels, zones, trail] = await Promise.all([
     getTranslations("people"),
     getTranslations("common"),
     getTranslations("roles"),
     getTranslations("busStatus"),
     getTranslations("zones"),
+    getTranslations("attendance"),
     getFormatter(),
     canHotel ? hotelOptions(user) : Promise.resolve([]),
     canZone ? zoneOptions(user) : Promise.resolve([]),
+    person.role === "CUSTOMER" ? getAttendanceTrail(user, person.id) : Promise.resolve(null),
   ]);
   const hotelSelect = hotels.map((h) => ({ value: h.id, label: h.name }));
   const zoneSelect = zones.map((z) => ({ value: z.id, label: z.name }));
@@ -110,6 +114,39 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
           <ActionForm action={setPersonZoneAction} hidden={{ id: person.id }} submitLabel={tc("save")} inline>
             <SelectField name="zoneId" label={tz("title")} defaultValue={person.zoneId ?? ""} emptyLabel={tz("unassignedAttendees")} options={zoneSelect} />
           </ActionForm>
+        </Section>
+      )}
+
+      {trail && (
+        <Section title={ta("title")}>
+          <p>
+            {trail.status.checkedIn
+              ? ta("statusCheckedIn", { time: format.dateTime(trail.status.checkedInAt!, { timeStyle: "short" }) })
+              : ta("statusNotCheckedIn")}
+          </p>
+          {canCheckInOut && (
+            <div className="flex flex-wrap gap-3">
+              <ActionForm action={recordCheckInOutAction} hidden={{ userId: person.id, type: "CHECK_IN" }} submitLabel={ta("checkIn")} inline />
+              <ActionForm action={recordCheckInOutAction} hidden={{ userId: person.id, type: "CHECK_OUT" }} submitLabel={ta("checkOut")} tone="secondary" inline />
+            </div>
+          )}
+          {trail.events.length > 0 && (
+            <details>
+              <summary className="cursor-pointer font-semibold text-brand">{ta("history", { count: trail.events.length })}</summary>
+              <ul className="mt-2 flex flex-col gap-1 text-base">
+                {trail.events.map((e) => (
+                  <li key={e.id}>
+                    {ta(`type.${e.type}`)}
+                    {e.gate && ` · ${e.gate.name}`}
+                    {e.bus && ` · ${e.bus.label}`}
+                    {" · "}
+                    {format.dateTime(e.createdAt, { dateStyle: "medium", timeStyle: "short" })}
+                    {e.recordedBy && ` · ${ta("by", { name: e.recordedBy.name })}`}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </Section>
       )}
 

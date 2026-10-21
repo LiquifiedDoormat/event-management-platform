@@ -6,8 +6,10 @@
 
 import { z } from "zod";
 import {
+  boardTypeSchema,
   busCreateInput,
   busInput,
+  checkTypeSchema,
   clusterInput,
   gateInput,
   hotelInput,
@@ -23,7 +25,9 @@ import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
 import * as clusters from "@/server/services/clusters";
 import * as zones from "@/server/services/zones";
+import * as attendance from "@/server/services/attendance";
 import * as settings from "@/server/services/settings";
+import { optionalId } from "@/lib/validation/common";
 import { run } from "@/features/run-action";
 import type { ActionState } from "./action-state";
 
@@ -175,6 +179,18 @@ export async function bulkAssignZoneAction(_: ActionState, form: FormData) {
   return run(form, async (u, d) => {
     await zones.bulkAssignZone(u, { zoneId: id.parse(d.zoneId), hotelId: optionalRef.parse(d.hotelId) ?? undefined });
   });
+}
+
+// ---- Attendance -------------------------------------------------------------
+
+export async function recordCheckInOutAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) =>
+    attendance.recordCheckInOut(u, { userId: id.parse(d.userId), type: checkTypeSchema.parse(d.type), gateId: optionalId.parse(d.gateId) }),
+  );
+}
+
+export async function recordBoardingAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => attendance.recordBoarding(u, { userId: id.parse(d.userId), busId: id.parse(d.busId), type: boardTypeSchema.parse(d.type) }));
 }
 
 // ---- Event settings (Owner) ------------------------------------------------

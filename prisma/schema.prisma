@@ -44,6 +44,14 @@ enum BusStatus {
   ARRIVED_AT_VENUE
 }
 
+/// One attendee movement: checking in/out at the venue, or boarding/departing a bus.
+enum AttendanceType {
+  CHECK_IN
+  CHECK_OUT
+  BOARD
+  DEPART
+}
+
 /// Every person with an account: owner, admins, coordinators, attendees.
 model User {
   id              String        @id @default(cuid())
@@ -66,6 +74,8 @@ model User {
   designatedBuses  Bus[]            @relation("BusCoordinator")
   trips            Trip[]
   statusEvents     BusStatusEvent[]
+  attendanceEvents AttendanceEvent[] @relation("AttendanceSubject")
+  recordedAttendance AttendanceEvent[] @relation("AttendanceRecorder")
   sessions         Session[]
   auditLogs        AuditLog[]
 
@@ -83,12 +93,13 @@ model Event {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  hotels   Hotel[]
-  clusters Cluster[]
-  zones    Zone[]
-  gates    Gate[]
-  members  EventMember[]
-  sessions Session[]
+  hotels           Hotel[]
+  clusters         Cluster[]
+  zones            Zone[]
+  gates            Gate[]
+  members          EventMember[]
+  sessions         Session[]
+  attendanceEvents AttendanceEvent[]
 
   @@index([isActive, name])
 }
@@ -124,6 +135,8 @@ model Gate {
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  attendanceEvents AttendanceEvent[]
 
   @@index([eventId, name])
   @@index([zoneId])
@@ -214,10 +227,11 @@ model Bus {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  stops        BusStop[]
-  trips        Trip[]
-  location     BusLocation?
-  statusEvents BusStatusEvent[]
+  stops            BusStop[]
+  trips            Trip[]
+  location         BusLocation?
+  statusEvents     BusStatusEvent[]
+  attendanceEvents AttendanceEvent[]
 
   @@index([hotelId, isActive])
 }
@@ -313,6 +327,31 @@ model BusStatusEvent {
 
   @@index([tripId, createdAt])
   @@index([busId, createdAt])
+}
+
+/// Append-only attendance/movement trail for one attendee — check-in/out at the
+/// venue, or boarding/departing a bus. Never updated or deleted; a correction
+/// is simply a new event. "Current" status is derived from the latest event.
+model AttendanceEvent {
+  id      String         @id @default(cuid())
+  eventId String
+  event   Event          @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  userId  String
+  user    User           @relation("AttendanceSubject", fields: [userId], references: [id], onDelete: Cascade)
+  type    AttendanceType
+  /// Set for CHECK_IN/CHECK_OUT only.
+  gateId  String?
+  gate    Gate?          @relation(fields: [gateId], references: [id], onDelete: SetNull)
+  /// Set for BOARD/DEPART only.
+  busId        String?
+  bus          Bus?      @relation(fields: [busId], references: [id], onDelete: SetNull)
+  recordedById String
+  recordedBy   User      @relation("AttendanceRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime  @default(now())
+
+  @@index([eventId, userId, createdAt])
+  @@index([busId, createdAt])
+  @@index([gateId])
 }
 
 /// Server-side session. The cookie holds a random token; only its SHA-256 hash is stored.
