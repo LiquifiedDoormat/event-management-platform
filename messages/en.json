@@ -83,6 +83,24 @@
     "clusterHotels": "Hotels in your cluster",
     "noClusterHotels": "No hotels are in this cluster yet."
   },
+  "ops": {
+    "title": "Ops board",
+    "total": "Fleet",
+    "boarding": "Boarding",
+    "moving": "Moving",
+    "arrived": "Arrived",
+    "notRunning": "Not running",
+    "delayed": "Delayed",
+    "status": "Status",
+    "allStatuses": "All statuses",
+    "hotel": "Hotel",
+    "cluster": "Cluster",
+    "delayedOnly": "Delayed only",
+    "noResults": "No buses match these filters.",
+    "noCoordinator": "No coordinator",
+    "sinceTime": "since {time}",
+    "autoRefresh": "Refreshes automatically every 20 seconds."
+  },
   "busStatus": {
     "BOARDING_AT_VENUE": "Boarding at venue",
     "DEPARTED_VENUE": "On the way to hotel",
@@ -131,7 +149,8 @@
     "coordinators": "Coord­inators",
     "people": "People",
     "import": "Import",
-    "clusters": "Clusters"
+    "clusters": "Clusters",
+    "ops": "Ops board"
   },
   "directory": {
     "search": "Search",

@@ -68,6 +68,7 @@ export function FilterSelect({
     <label className="flex flex-col gap-1 min-w-40 flex-1">
       <span className="font-semibold">{label}</span>
       <select
+        key={value ?? ""}
         name={name}
         defaultValue={value ?? ""}
         className="min-h-12 rounded-lg border-2 border-line bg-surface px-3 text-lg"

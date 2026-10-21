@@ -10,7 +10,7 @@ import { LocationMap } from "@/components/maps/LocationMap";
 
 const KIND_STYLE = {
   boarding: "border-warn bg-amber-50 text-warn",
-  moving: "border-brand bg-blue-50 text-brand",
+  moving: "border-brand bg-orange-50 text-brand",
   arrived: "border-ok bg-green-50 text-ok",
 } as const;
 

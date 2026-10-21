@@ -83,6 +83,24 @@
     "clusterHotels": "आपके क्लस्टर के होटल",
     "noClusterHotels": "इस क्लस्टर में अभी तक कोई होटल नहीं है।"
   },
+  "ops": {
+    "title": "ऑप्स बोर्ड",
+    "total": "कुल बसें",
+    "boarding": "बोर्डिंग",
+    "moving": "चल रही है",
+    "arrived": "पहुँच गई",
+    "notRunning": "यात्रा पर नहीं",
+    "delayed": "देरी से",
+    "status": "स्थिति",
+    "allStatuses": "सभी स्थितियाँ",
+    "hotel": "होटल",
+    "cluster": "क्लस्टर",
+    "delayedOnly": "केवल देरी वाली",
+    "noResults": "इन फ़िल्टर से कोई बस नहीं मिली।",
+    "noCoordinator": "कोई समन्वयक नहीं",
+    "sinceTime": "{time} से",
+    "autoRefresh": "हर 20 सेकंड में अपने-आप अपडेट होता है।"
+  },
   "busStatus": {
     "BOARDING_AT_VENUE": "वेन्यू पर बस में चढ़ रहे हैं",
     "DEPARTED_VENUE": "होटल की ओर जा रही है",
@@ -131,7 +149,8 @@
     "coordinators": "समन्वयक",
     "people": "लोग",
     "import": "इम्पोर्ट",
-    "clusters": "क्लस्टर"
+    "clusters": "क्लस्टर",
+    "ops": "ऑप्स बोर्ड"
   },
   "directory": {
     "search": "खोजें",

@@ -1,7 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/lib/auth/session";
+import type { BusStatus } from "@/generated/prisma/enums";
 import { can, type Actor } from "@/server/policies";
+import { forbidden } from "@/server/errors";
+import { STATUS_KIND, type StatusKind } from "@/lib/transport/status";
 import { eventOf } from "./context";
 
 /** Event-wide counts for Owner/Admin. Throws if the actor isn't staff. */
@@ -77,4 +80,80 @@ export async function getCoordinatorOverview(user: SessionUser) {
     }),
   ]);
   return { hotel: membership?.hotel ?? null, buses };
+}
+
+export type OpsBusRow = {
+  id: string;
+  label: string;
+  registration: string | null;
+  hotelId: string;
+  hotelName: string;
+  clusterId: string | null;
+  clusterName: string | null;
+  coordinatorName: string | null;
+  coordinatorPhone: string | null;
+  status: BusStatus | null;
+  statusChangedAt: Date | null;
+  isDelayed: boolean;
+  kind: StatusKind | "notRunning";
+};
+
+/**
+ * Airport-board-style view of every active bus in the event, unpaginated
+ * (sized for ~150 buses, not the 25-row keyset pages used elsewhere).
+ * `summary` always counts the whole fleet; `buses` reflects the filters.
+ */
+export async function getOpsDashboard(
+  actor: Actor,
+  opts: { statusKind?: StatusKind | "notRunning"; hotelId?: string; clusterId?: string; delayedOnly?: boolean } = {},
+) {
+  if (!can(actor, "dashboard.viewAll")) throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.bus.findMany({
+    where: { isActive: true, hotel: { eventId } },
+    orderBy: [{ hotel: { name: "asc" } }, { label: "asc" }],
+    select: {
+      id: true,
+      label: true,
+      registration: true,
+      hotel: { select: { id: true, name: true, clusterId: true, cluster: { select: { name: true } } } },
+      coordinator: { select: { name: true, phone: true } },
+      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, isDelayed: true } },
+    },
+  });
+
+  const all: OpsBusRow[] = rows.map((b) => {
+    const trip = b.trips[0];
+    return {
+      id: b.id,
+      label: b.label,
+      registration: b.registration,
+      hotelId: b.hotel.id,
+      hotelName: b.hotel.name,
+      clusterId: b.hotel.clusterId,
+      clusterName: b.hotel.cluster?.name ?? null,
+      coordinatorName: b.coordinator?.name ?? null,
+      coordinatorPhone: b.coordinator?.phone ?? null,
+      status: trip?.status ?? null,
+      statusChangedAt: trip?.statusChangedAt ?? null,
+      isDelayed: trip?.isDelayed ?? false,
+      kind: trip ? STATUS_KIND[trip.status] : "notRunning",
+    };
+  });
+
+  const summary = { boarding: 0, moving: 0, arrived: 0, notRunning: 0, delayed: 0, total: all.length };
+  for (const b of all) {
+    summary[b.kind]++;
+    if (b.isDelayed) summary.delayed++;
+  }
+
+  const buses = all.filter(
+    (b) =>
+      (!opts.statusKind || b.kind === opts.statusKind) &&
+      (!opts.hotelId || b.hotelId === opts.hotelId) &&
+      (!opts.clusterId || b.clusterId === opts.clusterId) &&
+      (!opts.delayedOnly || b.isDelayed),
+  );
+
+  return { summary, buses };
 }
