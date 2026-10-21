@@ -50,7 +50,9 @@ export default async function ZoneDetailPage({ params }: PageProps<"/[locale]/zo
               <li key={g.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3">
                 <span className="text-lg font-semibold">{g.name}</span>
                 {g.notes && <span className="text-muted">{g.notes}</span>}
-                {canManage && <ActionForm action={removeGateAction} hidden={{ id: g.id }} submitLabel={t("remove")} tone="danger" inline />}
+                {canManage && (
+                  <ActionForm action={removeGateAction} hidden={{ id: g.id }} submitLabel={t("remove")} ariaLabel={`${t("remove")} ${g.name}`} tone="danger" inline />
+                )}
               </li>
             ))}
           </ul>

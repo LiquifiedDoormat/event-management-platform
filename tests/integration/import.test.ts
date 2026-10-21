@@ -160,7 +160,7 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
     });
 
     it("imports an attendee's postal address when the column is present", async () => {
-      const { eventId, hotelA } = await createTwoHotels();
+      const { eventId } = await createTwoHotels();
       const admin = await staff("ADMIN", eventId);
       const phone1 = nextPhone().slice(3);
       const data = sheet(["name", "phone", "hotelName", "address"], [["Vikram Shah", phone1, "Hotel A", "12 MG Road, Bengaluru"]]);

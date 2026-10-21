@@ -28,11 +28,18 @@ export default async function ManifestPage({ params }: PageProps<"/[locale]/coor
               <a href={`tel:${a.phone}`} className="underline">📞 {a.phone}</a>
               {a.boarded ? <Badge tone="ok">{t("boarded")}</Badge> : <Badge>{t("notBoarded")}</Badge>}
               <div className="ml-auto flex gap-2">
-                <ActionForm action={recordBoardingAction} hidden={{ userId: a.id, busId: manifest.bus.id, type: "BOARD" }} submitLabel={t("board")} inline />
+                <ActionForm
+                  action={recordBoardingAction}
+                  hidden={{ userId: a.id, busId: manifest.bus.id, type: "BOARD" }}
+                  submitLabel={t("board")}
+                  ariaLabel={`${t("board")} ${a.name}`}
+                  inline
+                />
                 <ActionForm
                   action={recordBoardingAction}
                   hidden={{ userId: a.id, busId: manifest.bus.id, type: "DEPART" }}
                   submitLabel={t("depart")}
+                  ariaLabel={`${t("depart")} ${a.name}`}
                   tone="secondary"
                   inline
                 />

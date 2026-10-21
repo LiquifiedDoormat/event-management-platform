@@ -112,6 +112,7 @@
   "errors": {
     "notFound": "Page not found.",
     "generic": "Something went wrong. Please try again.",
+    "network": "No connection. Check your signal and tap to try again.",
     "unauthenticated": "Your session has ended. Please sign in again.",
     "forbidden": "You are not allowed to do this.",
     "not_found": "This record no longer exists.",

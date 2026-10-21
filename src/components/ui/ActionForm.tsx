@@ -24,6 +24,7 @@ export function ActionForm({
   action,
   children,
   submitLabel,
+  ariaLabel,
   hidden,
   confirmMessage,
   tone = "primary",
@@ -33,6 +34,12 @@ export function ActionForm({
   action: Action;
   children?: ReactNode;
   submitLabel: string;
+  /**
+   * Overrides the button's accessible name when `submitLabel` alone is
+   * ambiguous out of visual context — e.g. a "Remove" or "Board" button
+   * repeated once per row in a list. Include the row's own name/label.
+   */
+  ariaLabel?: string;
   hidden?: Record<string, string>;
   confirmMessage?: string;
   tone?: keyof typeof tones;
@@ -41,7 +48,20 @@ export function ActionForm({
   resetOnSuccess?: boolean;
 }) {
   const t = useTranslations();
-  const [state, formAction, pending] = useActionState(action, idle);
+  // Wraps the action so a failed network call (e.g. the device loses signal
+  // mid-tap) resolves to a normal error state instead of throwing — an
+  // uncaught rejection here would otherwise blow away the whole page via the
+  // route's error boundary, losing every other row's state along with it.
+  // Scoped to the form, not just attendance, but written for that case: a
+  // coordinator mid-boarding-list shouldn't lose the list over one bad tap.
+  const safeAction = async (prevState: ActionState, form: FormData): Promise<ActionState> => {
+    try {
+      return await action(prevState, form);
+    } catch {
+      return { status: "error", message: "errors.network" };
+    }
+  };
+  const [state, formAction, pending] = useActionState(safeAction, idle);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -68,6 +88,7 @@ export function ActionForm({
       <button
         type="submit"
         disabled={pending}
+        aria-label={ariaLabel}
         className={`min-h-12 px-5 rounded-lg border-2 text-lg font-semibold disabled:opacity-60 ${tones[tone]} ${inline ? "" : "self-start"}`}
       >
         {pending ? t("forms.saving") : submitLabel}
