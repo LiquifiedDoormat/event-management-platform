@@ -190,6 +190,32 @@ describe.skipIf(!hasTestDb)("people service", () => {
     expect((await people.getPerson(coordA, id)).address).toBeUndefined();
   });
 
+  it("shows medical needs to staff, the guest, and their own hotel coordinator -- wider than address", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA, hotelB, coordA, coordB } = await createTwoHotels();
+    const input = personCreateInput.parse({ name: "Needs Guest", phone: "98111 66666", role: "CUSTOMER", hotelId: hotelA.id, medicalNeeds: "Peanut allergy" });
+    const { id } = await people.createPerson(admin, input);
+    const guest = { id, role: "CUSTOMER" as const, hotelId: hotelA.id, eventId };
+
+    expect((await people.getPerson(admin, id)).medicalNeeds).toBe("Peanut allergy");
+    expect((await people.getPerson(guest, id)).medicalNeeds).toBe("Peanut allergy");
+    // Unlike address, the guest's own hotel coordinator can see it (and edit it).
+    const seenByCoordinator = await people.getPerson(coordA, id);
+    expect(seenByCoordinator.medicalNeeds).toBe("Peanut allergy");
+    expect(seenByCoordinator.canEditMedicalNeeds).toBe(true);
+    // A different hotel's coordinator gets neither.
+    void hotelB;
+    await expectError(people.getPerson(coordB, id), "not_found");
+
+    await people.updateMedicalNeeds(coordA, id, "Peanut allergy; carries EpiPen");
+    expect((await people.getPerson(admin, id)).medicalNeeds).toBe("Peanut allergy; carries EpiPen");
+    await expectError(people.updateMedicalNeeds(coordB, id, "tampered"), "forbidden");
+
+    const filtered = await people.listPeople(admin, { hasMedicalNeeds: true });
+    expect(filtered.items.map((p) => p.id)).toContain(id);
+    expect(filtered.items.every((p) => p.hasMedicalNeeds)).toBe(true);
+  });
+
   it("never lets anyone create an owner through the app", () => {
     expect(personCreateInput.safeParse({ name: "X", phone: "98111 44444", role: "OWNER" }).success).toBe(false);
   });

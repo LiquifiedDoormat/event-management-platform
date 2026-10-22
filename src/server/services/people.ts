@@ -5,6 +5,7 @@ import type { PersonCreateInput, PersonUpdateInput } from "@/lib/validation/enti
 import {
   assignableRoles,
   can,
+  canEditMedicalNeeds,
   canEditPerson,
   canResetPin,
   canSetAttendeeHotel,
@@ -65,7 +66,17 @@ const listSelect = (eventId: string) =>
     // cluster, in this event — same membership row either way.
     memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } } } },
     designatedBuses: { where: { isActive: true, hotel: { eventId } }, select: { id: true, label: true } },
+    // List views show only whether medical needs are on file, not the text
+    // itself — the full note stays on the person detail page, gated to
+    // whoever canEditMedicalNeeds allows (see getPerson).
+    medicalNeeds: true,
   }) satisfies Prisma.UserSelect;
+
+/** Strips the raw medical-needs text from a list row down to a yes/no tag. */
+const tagMedicalNeeds = <T extends { medicalNeeds: string | null }>({ medicalNeeds, ...rest }: T) => ({
+  ...rest,
+  hasMedicalNeeds: Boolean(medicalNeeds),
+});
 
 function searchWhere(q?: string): Prisma.UserWhereInput {
   if (!q) return {};
@@ -93,7 +104,7 @@ const shape = <
 /** Directory of the current event: search by name, phone digits or exact id. Staff only. */
 export async function listPeople(
   actor: Actor,
-  opts: { q?: string; cursor?: string; role?: Role | Role[]; status?: AccountStatus; hotelId?: string },
+  opts: { q?: string; cursor?: string; role?: Role | Role[]; status?: AccountStatus; hotelId?: string; hasMedicalNeeds?: true },
 ) {
   if (!can(actor, "dashboard.viewAll")) throw forbidden();
   const eventId = eventOf(actor);
@@ -105,6 +116,7 @@ export async function listPeople(
         opts.role ? { role: Array.isArray(opts.role) ? { in: opts.role } : opts.role } : {},
         opts.status ? { status: opts.status } : {},
         opts.hotelId ? { memberships: { some: { eventId, hotelId: opts.hotelId } } } : {},
+        opts.hasMedicalNeeds ? { medicalNeeds: { not: null } } : {},
       ],
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -112,7 +124,7 @@ export async function listPeople(
     select: listSelect(eventId),
   });
   const page = toPage(rows);
-  return { ...page, items: page.items.map(shape) };
+  return { ...page, items: page.items.map((p) => tagMedicalNeeds(shape(p))) };
 }
 
 /**
@@ -149,7 +161,7 @@ export async function exportAttendees(actor: Actor) {
  * Coordinator's attendee list: active attendees of the hotels the coordinator
  * is responsible for in the current event. Filtering is done in the database.
  */
-export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?: string }) {
+export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?: string; hasMedicalNeeds?: true }) {
   if (actor.role !== "COORDINATOR") throw forbidden();
   const eventId = eventOf(actor);
   const hotelIds = [...(await loadScope(actor)).hotelIds];
@@ -159,14 +171,21 @@ export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?:
       AND: [
         { role: "CUSTOMER", status: "ACTIVE", memberships: { some: { eventId, hotelId: { in: hotelIds } } } },
         searchWhere(opts.q),
+        opts.hasMedicalNeeds ? { medicalNeeds: { not: null } } : {},
       ],
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     ...pageArgs(opts.cursor),
-    select: { id: true, name: true, phone: true, memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } } },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      medicalNeeds: true,
+      memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } },
+    },
   });
   const page = toPage(rows);
-  return { ...page, items: page.items.map(({ memberships, ...p }) => ({ ...p, hotel: memberships[0]?.hotel ?? null })) };
+  return { ...page, items: page.items.map(({ memberships, ...p }) => tagMedicalNeeds({ ...p, hotel: memberships[0]?.hotel ?? null })) };
 }
 
 export async function getPerson(actor: Actor, id: string) {
@@ -178,6 +197,7 @@ export async function getPerson(actor: Actor, id: string) {
       name: true,
       phone: true,
       address: true,
+      medicalNeeds: true,
       role: true,
       status: true,
       preferredLocale: true,
@@ -197,7 +217,7 @@ export async function getPerson(actor: Actor, id: string) {
     },
   });
   if (!person) throw notFound();
-  const { pinHash, pinLockedUntil, address, ...rest } = shape(person);
+  const { pinHash, pinLockedUntil, address, medicalNeeds, ...rest } = shape(person);
   const result = {
     ...rest,
     // PII, more sensitive than name/phone: never sent to the client at all
@@ -215,7 +235,21 @@ export async function getPerson(actor: Actor, id: string) {
   };
   const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
   if (!canViewPerson(actor, scope, result)) throw notFound();
-  return result;
+  const canSeeMedicalNeeds = canEditMedicalNeeds(actor, scope, result);
+  return { ...result, medicalNeeds: canSeeMedicalNeeds ? medicalNeeds : undefined, canEditMedicalNeeds: canSeeMedicalNeeds };
+}
+
+/** Updates a guest's medical-needs note. Staff, the guest, or their hotel coordinator. */
+export async function updateMedicalNeeds(actor: Actor, id: string, medicalNeeds: string | undefined) {
+  const eventId = eventOf(actor);
+  const person = await findInEvent(prisma, id, eventId);
+  if (person.role !== "CUSTOMER") throw forbidden();
+  const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
+  if (!canEditMedicalNeeds(actor, scope, { id: person.id, role: person.role, hotelId: person.membership?.hotelId ?? null })) throw forbidden();
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id }, data: { medicalNeeds: medicalNeeds ?? null } });
+    await audit(tx, actor, "person.updateMedicalNeeds", "User", id, {});
+  });
 }
 
 export type CreatePersonResult = { id: string; addedExisting?: boolean };
@@ -251,6 +285,7 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
         phone: input.phone,
         role: input.role,
         address: input.role === "CUSTOMER" ? (input.address ?? null) : null,
+        medicalNeeds: input.role === "CUSTOMER" ? (input.medicalNeeds ?? null) : null,
         ...(member ? { memberships: { create: { eventId, hotelId } } } : {}),
       },
       select: { id: true },

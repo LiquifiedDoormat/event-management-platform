@@ -17,6 +17,15 @@ export type GateInput = z.infer<typeof gateInput>;
 export const checkTypeSchema = z.enum(["CHECK_IN", "CHECK_OUT"]);
 export const boardTypeSchema = z.enum(["BOARD", "DEPART"]);
 
+export const attendanceMarkSchema = z.enum(["BOARDED", "ABSENT"]);
+
+export const attendanceSessionInput = z.object({
+  busId: z.string().min(1).max(40),
+  date: z.coerce.date({ error: "required" }),
+  label: optionalText(80).transform((v) => v ?? ""),
+});
+export type AttendanceSessionInput = z.infer<typeof attendanceSessionInput>;
+
 export const hotelInput = z
   .object({
     name: requiredText(120),
@@ -55,14 +64,21 @@ export const personCreateInput = z.object({
   role: z.enum(["ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR", "CUSTOMER"]),
   hotelId: optionalId,
   address: optionalText(2000),
+  medicalNeeds: optionalText(2000),
 });
 export type PersonCreateInput = z.infer<typeof personCreateInput>;
 
 export const personUpdateInput = z.object({ name: requiredText(120), phone, address: optionalText(2000) });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
 
+export const medicalNeedsInput = z.object({ medicalNeeds: optionalText(2000) });
+export type MedicalNeedsInput = z.infer<typeof medicalNeedsInput>;
+
 export const peopleFilter = z.object({
   role: roleSchema.optional().catch(undefined),
   status: statusSchema.optional().catch(undefined),
   hotelId: z.string().max(40).optional().catch(undefined),
+  // Presence means "only guests with medical needs"; absence means unfiltered
+  // (never `false` — there's no "only guests without" state).
+  hasMedicalNeeds: z.preprocess((v) => (v === "1" || v === "true" ? true : undefined), z.literal(true).optional()).catch(undefined),
 });

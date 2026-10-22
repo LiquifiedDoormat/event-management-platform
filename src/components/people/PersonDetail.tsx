@@ -8,7 +8,7 @@ import { getCluster } from "@/server/services/clusters";
 import { hotelOptions } from "@/server/services/hotels";
 import { zoneOptions } from "@/server/services/zones";
 import { getAttendanceTrail } from "@/server/services/attendance";
-import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updatePersonAction } from "@/features/admin/actions";
+import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updateMedicalNeedsAction, updatePersonAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, PageHeader, Section } from "@/components/ui/Layout";
@@ -63,6 +63,20 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
                   [t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>],
                   [tz("title"), person.zone ? <Link key="z" href={`/zones/${person.zone.id}`} className="text-brand font-semibold underline">{person.zone.name}</Link> : "—"],
                   ...(person.address !== undefined ? ([[t("address"), person.address ?? "—"]] as [string, React.ReactNode][]) : []),
+                  ...(person.medicalNeeds !== undefined
+                    ? ([
+                        [
+                          t("medicalNeeds"),
+                          person.medicalNeeds ? (
+                            <span key="mn" className="whitespace-pre-wrap">
+                              {person.medicalNeeds}
+                            </span>
+                          ) : (
+                            t("medicalNeedsNone")
+                          ),
+                        ],
+                      ] as [string, React.ReactNode][])
+                    : []),
                 ] as [string, React.ReactNode][])
               : []),
             ...(person.role === "CLUSTER_COORDINATOR"
@@ -134,6 +148,14 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
             <TextField name="name" label={t("name")} defaultValue={person.name} required maxLength={120} />
             <TextField name="phone" label={t("phone")} defaultValue={person.phone} type="tel" inputMode="tel" required hint={t("phoneChangeHint")} />
             {person.role === "CUSTOMER" && <TextField name="address" label={t("address")} defaultValue={person.address ?? ""} multiline />}
+          </ActionForm>
+        </Section>
+      )}
+
+      {person.role === "CUSTOMER" && person.canEditMedicalNeeds && (
+        <Section title={t("medicalNeeds")}>
+          <ActionForm action={updateMedicalNeedsAction} hidden={{ id: person.id }} submitLabel={t("saveMedicalNeeds")}>
+            <TextField name="medicalNeeds" label={t("medicalNeeds")} hint={t("medicalNeedsHint")} defaultValue={person.medicalNeeds ?? ""} multiline />
           </ActionForm>
         </Section>
       )}
