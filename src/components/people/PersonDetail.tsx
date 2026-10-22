@@ -4,6 +4,7 @@ import { BackLink } from "@/components/ui/BackLink";
 import type { SessionUser } from "@/lib/auth/session";
 import { assignableRoles, can, canEditPerson, canResetPin, canSetAttendeeHotel } from "@/server/policies";
 import { getPerson } from "@/server/services/people";
+import { getCluster } from "@/server/services/clusters";
 import { hotelOptions } from "@/server/services/hotels";
 import { zoneOptions } from "@/server/services/zones";
 import { getAttendanceTrail } from "@/server/services/attendance";
@@ -24,7 +25,11 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
   const canPin = canResetPin(user, person);
   const canCheckInOut = person.role === "CUSTOMER" && can(user, "attendance.checkInOut");
-  const [t, tc, tr, ts, tz, ta, format, hotels, zones, trail] = await Promise.all([
+  // An Admin selecting a cluster coordinator sees the hotels (and their own
+  // coordinators) under that cluster — same data the Clusters section already
+  // shows, reused rather than re-queried from scratch.
+  const canSeeClusterReports = person.role === "CLUSTER_COORDINATOR" && Boolean(person.cluster) && can(user, "dashboard.viewAll");
+  const [t, tc, tr, ts, tz, ta, format, hotels, zones, trail, cluster] = await Promise.all([
     getTranslations("people"),
     getTranslations("common"),
     getTranslations("roles"),
@@ -35,6 +40,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
     canHotel ? hotelOptions(user) : Promise.resolve([]),
     canZone ? zoneOptions(user) : Promise.resolve([]),
     person.role === "CUSTOMER" ? getAttendanceTrail(user, person.id) : Promise.resolve(null),
+    canSeeClusterReports ? getCluster(user, person.cluster!.id) : Promise.resolve(null),
   ]);
   const hotelSelect = hotels.map((h) => ({ value: h.id, label: h.name }));
   const zoneSelect = zones.map((z) => ({ value: z.id, label: z.name }));
@@ -92,6 +98,35 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
           ]}
         />
       </Section>
+
+      {cluster && (
+        <Section title={t("clusterReports")}>
+          {cluster.hotels.length === 0 ? (
+            <p>{t("noClusterHotels")}</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {cluster.hotels.map((h) => (
+                <li key={h.id} className="rounded-lg border border-line p-3 flex flex-col gap-1">
+                  <Link href={`/hotels/${h.id}`} className="text-lg font-semibold text-brand underline">
+                    🏨 {h.name}
+                  </Link>
+                  {h.coordinators.length === 0 ? (
+                    <span className="text-muted">{t("noCoordinator")}</span>
+                  ) : (
+                    <span className="flex flex-wrap gap-x-3">
+                      {h.coordinators.map((c) => (
+                        <Link key={c.id} href={`/coordinators/${c.id}`} className="text-brand font-semibold underline">
+                          {c.name}
+                        </Link>
+                      ))}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
 
       {editable && (
         <Section title={t("edit")}>

@@ -93,7 +93,7 @@ const shape = <
 /** Directory of the current event: search by name, phone digits or exact id. Staff only. */
 export async function listPeople(
   actor: Actor,
-  opts: { q?: string; cursor?: string; role?: Role; status?: AccountStatus; hotelId?: string },
+  opts: { q?: string; cursor?: string; role?: Role | Role[]; status?: AccountStatus; hotelId?: string },
 ) {
   if (!can(actor, "dashboard.viewAll")) throw forbidden();
   const eventId = eventOf(actor);
@@ -102,7 +102,7 @@ export async function listPeople(
       AND: [
         inEvent(eventId),
         searchWhere(opts.q),
-        opts.role ? { role: opts.role } : {},
+        opts.role ? { role: Array.isArray(opts.role) ? { in: opts.role } : opts.role } : {},
         opts.status ? { status: opts.status } : {},
         opts.hotelId ? { memberships: { some: { eventId, hotelId: opts.hotelId } } } : {},
       ],

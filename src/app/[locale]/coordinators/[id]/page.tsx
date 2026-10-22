@@ -9,6 +9,6 @@ export default async function CoordinatorPage({ params }: PageProps<"/[locale]/c
   setRequestLocale(locale);
   const user = await requireStaff(locale);
   const person = await orNotFound(getPerson(user, id));
-  if (person.role !== "COORDINATOR") notFound();
+  if (person.role !== "COORDINATOR" && person.role !== "CLUSTER_COORDINATOR") notFound();
   return <PersonDetail user={user} person={person} backHref="/coordinators" />;
 }

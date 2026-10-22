@@ -154,7 +154,9 @@
     "import": "Import",
     "clusters": "Clusters",
     "ops": "Ops board",
-    "zones": "Zones"
+    "zones": "Zones",
+    "org": "Org chart",
+    "myGuests": "My guests"
   },
   "directory": {
     "search": "Search",
@@ -276,11 +278,17 @@
     "confirmDeactivate": "Deactivate this bus? It will be hidden from guests.",
     "attendeeView": "See what guests see"
   },
+  "org": {
+    "title": "Org chart",
+    "intro": "Reporting relationships, from the event's leadership down to each hotel's coordinators.",
+    "empty": "Nothing to show yet — you don't have a cluster or hotel assignment for this event."
+  },
   "coordinators": {
     "title": "Coordinators",
     "add": "Add coordinator",
     "searchPlaceholder": "Name or phone number",
-    "noHotel": "No hotel assigned"
+    "noHotel": "No hotel assigned",
+    "noCluster": "No cluster assigned"
   },
   "people": {
     "title": "People",
@@ -323,7 +331,9 @@
     "resetPin": "Reset PIN",
     "confirmResetPin": "Reset the PIN for {name}? Their current PIN stops working, they are signed out, and they choose a new PIN at their next sign-in. Ask them to do it right away.",
     "coordinatesCluster": "Cluster coordinator for {cluster}",
-    "designatedCluster": "Designated cluster"
+    "designatedCluster": "Designated cluster",
+    "clusterReports": "Hotels and coordinators in this cluster",
+    "noClusterHotels": "No hotels in this cluster yet."
   },
   "transport": {
     "notRunning": "This bus is not running right now.",
