@@ -28,6 +28,13 @@ body {
   line-height: 1.5;
 }
 
+/* The login page supplies its own full-bleed background image (see `.login-bg`);
+   let it show through instead of the solid body background behind it. Scoped to
+   that one page via :has() so every other page is unaffected. */
+body:has(.login-bg) {
+  background: transparent;
+}
+
 :focus-visible {
   outline: 3px solid var(--color-brand);
   outline-offset: 2px;
