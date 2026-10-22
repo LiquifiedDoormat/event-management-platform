@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
+import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/current-user";
 import { getCustomerHome, toSnapshot } from "@/server/services/transport";
 import { LocationMap } from "@/components/maps/LocationMap";
@@ -11,11 +12,13 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
   const { locale } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale, ["CUSTOMER"]);
-  const [t, tt, tm, { settings, hotel }] = await Promise.all([
+  const [t, tp, tt, tm, { settings, hotel }, self] = await Promise.all([
     getTranslations("dashboard"),
+    getTranslations("profile"),
     getTranslations("transport"),
     getTranslations("maps"),
     getCustomerHome(user),
+    prisma.user.findUnique({ where: { id: user.id }, select: { gender: true } }),
   ]);
 
   return (
@@ -23,6 +26,11 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
       <div>
         <h1 className="text-3xl font-bold">{t("welcome", { name: user.name })}</h1>
         {user.eventName && <p className="text-lg text-muted">{user.eventName}</p>}
+        {self?.gender && (
+          <p className="text-muted">
+            {tp("gender")}: {self.gender}
+          </p>
+        )}
       </div>
 
       {!hotel ? (

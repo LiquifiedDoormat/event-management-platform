@@ -26,6 +26,19 @@ export const attendanceSessionInput = z.object({
 });
 export type AttendanceSessionInput = z.infer<typeof attendanceSessionInput>;
 
+const optionalDate = z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.date({ error: "invalid" }).optional());
+
+export const busCoordinatorScheduleInput = z
+  .object({
+    busId: z.string().min(1).max(40),
+    coordinatorId: z.string().min(1).max(40),
+    startsOn: z.coerce.date({ error: "required" }),
+    endsOn: optionalDate,
+    notes: optionalText(300).transform((v) => v ?? ""),
+  })
+  .refine((v) => !v.endsOn || v.endsOn >= v.startsOn, { message: "endBeforeStart", path: ["endsOn"] });
+export type BusCoordinatorScheduleInput = z.infer<typeof busCoordinatorScheduleInput>;
+
 export const hotelInput = z
   .object({
     name: requiredText(120),
@@ -65,10 +78,11 @@ export const personCreateInput = z.object({
   hotelId: optionalId,
   address: optionalText(2000),
   medicalNeeds: optionalText(2000),
+  gender: optionalText(40),
 });
 export type PersonCreateInput = z.infer<typeof personCreateInput>;
 
-export const personUpdateInput = z.object({ name: requiredText(120), phone, address: optionalText(2000) });
+export const personUpdateInput = z.object({ name: requiredText(120), phone, address: optionalText(2000), gender: optionalText(40) });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
 
 export const medicalNeedsInput = z.object({ medicalNeeds: optionalText(2000) });

@@ -19,7 +19,7 @@ export default async function ProfilePage({ params, searchParams }: PageProps<"/
     getTranslations("common"),
     getTranslations("roles"),
     user.hotelId ? prisma.hotel.findUnique({ where: { id: user.hotelId }, select: { name: true } }) : Promise.resolve(null),
-    user.role === "CUSTOMER" ? prisma.user.findUnique({ where: { id: user.id }, select: { address: true } }) : Promise.resolve(null),
+    user.role === "CUSTOMER" ? prisma.user.findUnique({ where: { id: user.id }, select: { address: true, gender: true } }) : Promise.resolve(null),
   ]);
 
   return (
@@ -41,6 +41,7 @@ export default async function ProfilePage({ params, searchParams }: PageProps<"/
             ...(user.role === "CUSTOMER"
               ? ([
                   [t("hotel"), hotel?.name ?? "—"],
+                  [t("gender"), self?.gender ?? "—"],
                   [t("address"), self?.address ?? "—"],
                 ] as [string, string][])
               : []),

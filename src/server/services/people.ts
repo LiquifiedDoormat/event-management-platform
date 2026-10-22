@@ -142,6 +142,7 @@ export async function exportAttendees(actor: Actor) {
       name: true,
       phone: true,
       address: true,
+      gender: true,
       memberships: {
         where: { eventId },
         select: { hotel: { select: { name: true } }, zone: { select: { name: true } } },
@@ -153,6 +154,7 @@ export async function exportAttendees(actor: Actor) {
     phone: r.phone,
     hotel: r.memberships[0]?.hotel?.name ?? "",
     zone: r.memberships[0]?.zone?.name ?? "",
+    gender: r.gender ?? "",
     address: r.address ?? "",
   }));
 }
@@ -198,6 +200,7 @@ export async function getPerson(actor: Actor, id: string) {
       phone: true,
       address: true,
       medicalNeeds: true,
+      gender: true,
       role: true,
       status: true,
       preferredLocale: true,
@@ -286,6 +289,7 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
         role: input.role,
         address: input.role === "CUSTOMER" ? (input.address ?? null) : null,
         medicalNeeds: input.role === "CUSTOMER" ? (input.medicalNeeds ?? null) : null,
+        gender: input.role === "CUSTOMER" ? (input.gender ?? null) : null,
         ...(member ? { memberships: { create: { eventId, hotelId } } } : {}),
       },
       select: { id: true },
@@ -301,7 +305,7 @@ export async function updatePerson(actor: Actor, id: string, input: PersonUpdate
     return await prisma.$transaction(async (tx) => {
       const target = await findInEvent(tx, id, eventOf(actor));
       if (!can(actor, "person.update") || !canEditPerson(actor, target)) throw forbidden();
-      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null } });
+      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null, gender: input.gender ?? null } });
       const phoneChanged = target.phone !== input.phone;
       if (phoneChanged) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
       await audit(tx, actor, "person.update", "User", id, { phoneChanged });

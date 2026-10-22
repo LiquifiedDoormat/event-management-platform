@@ -74,6 +74,9 @@ model User {
   /// attendee themselves, and their hotel coordinator — see canEditMedicalNeeds
   /// in policies/index.ts. A narrower gate than address: coordinators act on this.
   medicalNeeds    String?       @db.Text
+  /// Free text, not a fixed enum — avoids forcing a choice that doesn't fit.
+  /// Attendees only, like address/medicalNeeds.
+  gender          String?
   /// scrypt hash of the 6-digit PIN (Owner/Admin/Coordinator only). Never the PIN itself.
   /// Null = the person chooses a PIN at their next sign-in (new account or admin reset).
   pinHash           String?
@@ -90,6 +93,8 @@ model User {
   attendanceEvents AttendanceEvent[] @relation("AttendanceSubject")
   recordedAttendance AttendanceEvent[] @relation("AttendanceRecorder")
   attendanceSessionsCreated AttendanceSession[] @relation("AttendanceSessionCreator")
+  coordinatorAssignments        BusCoordinatorAssignment[] @relation("BusCoordinatorAssignment")
+  coordinatorAssignmentsCreated BusCoordinatorAssignment[] @relation("BusCoordinatorAssignmentCreator")
   attendanceRecords         AttendanceRecord[]  @relation("AttendanceRecordSubject")
   attendanceRecordsRecorded AttendanceRecord[]  @relation("AttendanceRecordRecorder")
   sessions         Session[]
@@ -250,8 +255,33 @@ model Bus {
   statusEvents     BusStatusEvent[]
   attendanceEvents AttendanceEvent[]
   attendanceSessions AttendanceSession[]
+  coordinatorAssignments BusCoordinatorAssignment[]
 
   @@index([hotelId, isActive])
+}
+
+/// Planned/historical record of who is responsible for a bus over a date
+/// range — distinct from Bus.coordinatorId, which is the single *current*
+/// responsible coordinator actually used for trip-starting and live
+/// tracking. This is a read/scheduling layer on top of that, not a
+/// replacement for it: changing a schedule here does not itself change who
+/// can start a trip today. See PROJECT_MEMORY.md Phase 3 notes.
+model BusCoordinatorAssignment {
+  id            String    @id @default(cuid())
+  busId         String
+  bus           Bus       @relation(fields: [busId], references: [id], onDelete: Restrict)
+  coordinatorId String
+  coordinator   User      @relation("BusCoordinatorAssignment", fields: [coordinatorId], references: [id], onDelete: Restrict)
+  startsOn      DateTime  @db.Date
+  /// null = open-ended (no planned end yet).
+  endsOn        DateTime? @db.Date
+  notes         String?
+  createdById   String
+  createdBy     User      @relation("BusCoordinatorAssignmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now())
+
+  @@index([busId, startsOn])
+  @@index([coordinatorId, startsOn])
 }
 
 /// Ordered stops on a bus's current route. Editable as routes change.

@@ -62,6 +62,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
               ? ([
                   [t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>],
                   [tz("title"), person.zone ? <Link key="z" href={`/zones/${person.zone.id}`} className="text-brand font-semibold underline">{person.zone.name}</Link> : "—"],
+                  [t("gender"), person.gender || "—"],
                   ...(person.address !== undefined ? ([[t("address"), person.address ?? "—"]] as [string, React.ReactNode][]) : []),
                   ...(person.medicalNeeds !== undefined
                     ? ([
@@ -148,6 +149,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
             <TextField name="name" label={t("name")} defaultValue={person.name} required maxLength={120} />
             <TextField name="phone" label={t("phone")} defaultValue={person.phone} type="tel" inputMode="tel" required hint={t("phoneChangeHint")} />
             {person.role === "CUSTOMER" && <TextField name="address" label={t("address")} defaultValue={person.address ?? ""} multiline />}
+            {person.role === "CUSTOMER" && <TextField name="gender" label={t("gender")} defaultValue={person.gender ?? ""} maxLength={40} />}
           </ActionForm>
         </Section>
       )}

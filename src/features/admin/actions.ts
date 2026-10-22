@@ -9,6 +9,7 @@ import {
   attendanceMarkSchema,
   attendanceSessionInput,
   boardTypeSchema,
+  busCoordinatorScheduleInput,
   busCreateInput,
   busInput,
   checkTypeSchema,
@@ -30,6 +31,7 @@ import * as clusters from "@/server/services/clusters";
 import * as zones from "@/server/services/zones";
 import * as attendance from "@/server/services/attendance";
 import * as attendanceSessions from "@/server/services/attendanceSessions";
+import * as busSchedule from "@/server/services/busCoordinatorSchedule";
 import * as settings from "@/server/services/settings";
 import { optionalId, optionalText } from "@/lib/validation/common";
 import { run } from "@/features/run-action";
@@ -210,6 +212,21 @@ export async function createAttendanceSessionAction(_: ActionState, form: FormDa
     const input = attendanceSessionInput.parse(d);
     const session = await attendanceSessions.createSession(u, input);
     return `/coordinator/manifest/${input.busId}/${session.id}`;
+  });
+}
+
+// ---- Bus coordinator schedule ------------------------------------------------
+
+export async function scheduleBusCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    const input = busCoordinatorScheduleInput.parse(d);
+    await busSchedule.scheduleAssignment(u, { ...input, endsOn: input.endsOn ?? null });
+  });
+}
+
+export async function removeScheduledBusCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await busSchedule.removeAssignment(u, id.parse(d.id));
   });
 }
 

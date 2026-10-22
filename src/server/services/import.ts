@@ -259,6 +259,7 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
     }
     seenPhones.add(normPhone);
     const address = role === "CUSTOMER" ? (obj.address ?? "").trim() : "";
+    const gender = role === "CUSTOMER" ? (obj.gender ?? "").trim() : "";
 
     return {
       row: rowNum,
@@ -271,6 +272,7 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
           role,
           hotelId: role === "CUSTOMER" && hotelId ? hotelId : undefined,
           address: address || undefined,
+          gender: gender || undefined,
         });
         if (role === "COORDINATOR" && hotelId) await addHotelCoordinator(actor, hotelId, created.id);
         return created.addedExisting ? { kind: "addedExisting" } : { kind: "created" };

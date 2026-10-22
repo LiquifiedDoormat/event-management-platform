@@ -32,6 +32,7 @@ export default async function NewPersonPage({ params, searchParams }: PageProps<
           options={roles.map((r) => ({ value: r, label: tr(r) }))}
         />
         <SelectField name="hotelId" label={t("hotel")} hint={t("hotelHint")} emptyLabel={t("noHotel")} options={hotels.map((h) => ({ value: h.id, label: h.name }))} />
+        <TextField name="gender" label={t("gender")} maxLength={40} />
         <TextField name="address" label={t("address")} hint={t("hotelHint")} multiline />
         <TextField name="medicalNeeds" label={t("medicalNeeds")} hint={t("medicalNeedsHint")} multiline />
       </ActionForm>

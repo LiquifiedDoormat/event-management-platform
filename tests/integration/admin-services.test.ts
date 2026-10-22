@@ -190,6 +190,17 @@ describe.skipIf(!hasTestDb)("people service", () => {
     expect((await people.getPerson(coordA, id)).address).toBeUndefined();
   });
 
+  it("stores and updates a guest's gender", async () => {
+    const admin = await staff("ADMIN");
+    const { hotelA } = await createTwoHotels();
+    const input = personCreateInput.parse({ name: "Gender Guest", phone: "98111 77777", role: "CUSTOMER", hotelId: hotelA.id, gender: "Non-binary" });
+    const { id } = await people.createPerson(admin, input);
+    expect((await people.getPerson(admin, id)).gender).toBe("Non-binary");
+
+    await people.updatePerson(admin, id, { name: "Gender Guest", phone: "+919811177777", address: "", gender: "Prefer not to say" });
+    expect((await people.getPerson(admin, id)).gender).toBe("Prefer not to say");
+  });
+
   it("shows medical needs to staff, the guest, and their own hotel coordinator -- wider than address", async () => {
     const admin = await staff("ADMIN");
     const { eventId, hotelA, hotelB, coordA, coordB } = await createTwoHotels();
