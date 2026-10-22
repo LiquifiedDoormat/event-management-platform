@@ -14,6 +14,7 @@ datasource db {
 enum Role {
   OWNER
   ADMIN
+  CLUSTER_COORDINATOR
   COORDINATOR
   CUSTOMER
 }
@@ -29,12 +30,26 @@ enum Locale {
 }
 
 /// Operational status shown to attendees. Set by the trip coordinator.
+/// The bus's leg within one trip. A trip may start at either boarding point
+/// (venue-bound in the evening, hotel-bound in the morning) and then only
+/// advances forward through its own direction — see server/services/trips.ts
+/// for the enforced transition table. Delayed/cancelled are not states here;
+/// they're Trip.isDelayed/Trip.cancelled, since either can apply at any leg.
 enum BusStatus {
-  BOARDING
-  TO_HOTEL
-  AT_HOTEL
-  TO_STOP
-  AT_STOP
+  BOARDING_AT_VENUE
+  DEPARTED_VENUE
+  ARRIVED_AT_HOTEL
+  BOARDING_AT_HOTEL
+  DEPARTED_HOTEL
+  ARRIVED_AT_VENUE
+}
+
+/// One attendee movement: checking in/out at the venue, or boarding/departing a bus.
+enum AttendanceType {
+  CHECK_IN
+  CHECK_OUT
+  BOARD
+  DEPART
 }
 
 /// Every person with an account: owner, admins, coordinators, attendees.
@@ -46,6 +61,9 @@ model User {
   role            Role          @default(CUSTOMER)
   status          AccountStatus @default(ACTIVE)
   preferredLocale Locale        @default(en)
+  /// Postal address (attendees only). Sensitive PII: gated to Owner/Admin and
+  /// the attendee themselves — see canViewAddress in policies/index.ts.
+  address         String?       @db.Text
   /// scrypt hash of the 6-digit PIN (Owner/Admin/Coordinator only). Never the PIN itself.
   /// Null = the person chooses a PIN at their next sign-in (new account or admin reset).
   pinHash           String?
@@ -56,10 +74,11 @@ model User {
 
   memberships      EventMember[]
 
-  coordinatedHotels Hotel[]         @relation("HotelCoordinator")
   designatedBuses  Bus[]            @relation("BusCoordinator")
   trips            Trip[]
   statusEvents     BusStatusEvent[]
+  attendanceEvents AttendanceEvent[] @relation("AttendanceSubject")
+  recordedAttendance AttendanceEvent[] @relation("AttendanceRecorder")
   sessions         Session[]
   auditLogs        AuditLog[]
 
@@ -77,11 +96,69 @@ model Event {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  hotels   Hotel[]
-  members  EventMember[]
-  sessions Session[]
+  hotels           Hotel[]
+  clusters         Cluster[]
+  zones            Zone[]
+  gates            Gate[]
+  members          EventMember[]
+  sessions         Session[]
+  attendanceEvents AttendanceEvent[]
 
   @@index([isActive, name])
+}
+
+/// A seating/venue section attendees are assigned to (Phase 5). Optional: an
+/// attendee with no zone is simply unassigned, never an error.
+model Zone {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  name      String
+  capacity  Int?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gates   Gate[]
+  members EventMember[]
+
+  @@index([eventId, isActive, name])
+}
+
+/// An entry/exit point at the venue. Optionally linked to the zone it serves;
+/// a zone-less gate is a general venue gate (e.g. main entrance).
+model Gate {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  zoneId    String?
+  zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  name      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendanceEvents AttendanceEvent[]
+
+  @@index([eventId, name])
+  @@index([zoneId])
+}
+
+/// Groups hotels for one cluster coordinator's oversight within an event. Optional:
+/// a hotel with no cluster is simply ungrouped, never an error.
+model Cluster {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotels  Hotel[]
+  members EventMember[]
+
+  @@index([eventId, name])
 }
 
 /// Registration of an attendee or coordinator for an event (staff have access to all events).
@@ -91,37 +168,50 @@ model EventMember {
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// Attendee hotel allotment for this event. Read on every request so reassignment applies immediately.
+  /// Attendee's hotel allotment, or a hotel coordinator's assigned hotel (many
+  /// coordinators may share one hotel — nothing here makes it exclusive). Read on
+  /// every request so reassignment applies immediately.
   hotelId   String?
   hotel     Hotel?   @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  /// A cluster coordinator's assigned cluster. Unused by other roles.
+  clusterId String?
+  cluster   Cluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  /// Attendee's assigned seating/venue zone. Unused by other roles.
+  zoneId    String?
+  zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@unique([eventId, userId])
   @@index([userId])
   @@index([hotelId])
+  @@index([clusterId])
+  @@index([zoneId])
 }
 
 model Hotel {
-  id            String   @id @default(cuid())
-  eventId       String
-  event         Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  name          String
-  address       String
-  latitude      Float?
-  longitude     Float?
-  notes         String?
-  isActive      Boolean  @default(true)
-  /// One designated coordinator per hotel; a coordinator designates at most one hotel per event.
-  coordinatorId String?
-  coordinator   User?    @relation("HotelCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  name      String
+  address   String
+  latitude  Float?
+  longitude Float?
+  notes     String?
+  isActive  Boolean  @default(true)
+  /// Optional grouping for a cluster coordinator's oversight.
+  clusterId String?
+  cluster   Cluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  /// Hotel coordinators are EventMember rows with hotelId = this hotel and the
+  /// user's role = COORDINATOR (looked up, not a direct relation — several
+  /// coordinators may share a hotel; see services/hotels.ts).
   members EventMember[]
   buses   Bus[]
 
-  @@unique([eventId, coordinatorId])
   @@index([eventId, isActive, name])
+  @@index([clusterId])
 }
 
 model Bus {
@@ -131,21 +221,22 @@ model Bus {
   registration  String?  @unique
   hotelId       String
   hotel         Hotel    @relation(fields: [hotelId], references: [id], onDelete: Restrict)
-  /// Default coordinator for this bus; the active trip records who is actually on board.
-  coordinatorId String?
+  /// This bus's one responsible coordinator; the active trip records who is actually on
+  /// board. A coordinator is the responsible coordinator of at most one bus (unique).
+  coordinatorId String?  @unique
   coordinator   User?    @relation("BusCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
   routeNotes    String?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  stops        BusStop[]
-  trips        Trip[]
-  location     BusLocation?
-  statusEvents BusStatusEvent[]
+  stops            BusStop[]
+  trips            Trip[]
+  location         BusLocation?
+  statusEvents     BusStatusEvent[]
+  attendanceEvents AttendanceEvent[]
 
   @@index([hotelId, isActive])
-  @@index([coordinatorId])
 }
 
 /// Ordered stops on a bus's current route. Editable as routes change.
@@ -174,10 +265,15 @@ model Trip {
   bus             Bus       @relation(fields: [busId], references: [id], onDelete: Restrict)
   coordinatorId   String
   coordinator     User      @relation(fields: [coordinatorId], references: [id], onDelete: Restrict)
-  status          BusStatus @default(BOARDING)
+  status          BusStatus @default(BOARDING_AT_VENUE)
   statusChangedAt DateTime  @default(now())
   /// Incremented on every status change; clients send it back to reject stale updates.
   statusVersion   Int       @default(0)
+  /// Independent of status/leg: can be set while on any leg, cleared when it clears.
+  isDelayed       Boolean   @default(false)
+  /// Trip ended because it was called off, not completed. endedAt is set either way;
+  /// this distinguishes why, for history/dashboard purposes.
+  cancelled       Boolean   @default(false)
   sharingLocation Boolean   @default(false)
   startedAt       DateTime  @default(now())
   endedAt         DateTime?
@@ -225,6 +321,8 @@ model BusStatusEvent {
   trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
   busId       String
   bus         Bus       @relation(fields: [busId], references: [id], onDelete: Cascade)
+  /// The status before this change (null for a trip's first event — there is no "from").
+  fromStatus  BusStatus?
   status      BusStatus
   changedById String?
   changedBy   User?     @relation(fields: [changedById], references: [id], onDelete: SetNull)
@@ -232,6 +330,31 @@ model BusStatusEvent {
 
   @@index([tripId, createdAt])
   @@index([busId, createdAt])
+}
+
+/// Append-only attendance/movement trail for one attendee — check-in/out at the
+/// venue, or boarding/departing a bus. Never updated or deleted; a correction
+/// is simply a new event. "Current" status is derived from the latest event.
+model AttendanceEvent {
+  id      String         @id @default(cuid())
+  eventId String
+  event   Event          @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  userId  String
+  user    User           @relation("AttendanceSubject", fields: [userId], references: [id], onDelete: Cascade)
+  type    AttendanceType
+  /// Set for CHECK_IN/CHECK_OUT only.
+  gateId  String?
+  gate    Gate?          @relation(fields: [gateId], references: [id], onDelete: SetNull)
+  /// Set for BOARD/DEPART only.
+  busId        String?
+  bus          Bus?      @relation(fields: [busId], references: [id], onDelete: SetNull)
+  recordedById String
+  recordedBy   User      @relation("AttendanceRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime  @default(now())
+
+  @@index([eventId, userId, createdAt])
+  @@index([busId, createdAt])
+  @@index([gateId])
 }
 
 /// Server-side session. The cookie holds a random token; only its SHA-256 hash is stored.

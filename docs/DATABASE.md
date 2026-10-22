@@ -6,10 +6,11 @@ PostgreSQL 17 (local: Docker; production: a managed service such as Neon or Supa
 
 | Model | Purpose | Key constraints |
 | --- | --- | --- |
-| `User` | Every account (Owner, Admin, Coordinator, Customer), one per phone. PIN fields: `pinHash` (scrypt; null = chooses a PIN at next sign-in), `failedPinAttempts`, `pinLockedUntil`. | `phone` unique, E.164 CHECK; index `(role,status)`, `name` |
+| `User` | Every account (Owner, Admin, Cluster Coordinator, Hotel Coordinator, Customer), one per phone. PIN fields: `pinHash` (scrypt; null = chooses a PIN at next sign-in), `failedPinAttempts`, `pinLockedUntil`. | `phone` unique, E.164 CHECK; index `(role,status)`, `name` |
 | `Event` | An independent event: name, dates, active flag. | dates CHECK; index `(isActive,name)` |
-| `EventMember` | Attendee/coordinator registration for an event; `hotelId` = attendee's hotel in that event. | unique `(eventId,userId)`; index `userId`, `hotelId` |
-| `Hotel` | Belongs to one event (`eventId`); address, coordinates, notes, active flag. | unique `(eventId, coordinatorId)` (a coordinator designates at most one hotel per event); coords CHECK |
+| `Cluster` | Optional grouping of hotels within an event, for a cluster coordinator's oversight. | index `(eventId,name)` |
+| `EventMember` | Attendee/coordinator registration for an event. `hotelId` = an attendee's hotel **or** a hotel coordinator's assigned hotel (several coordinators may share a hotel — nothing here makes it exclusive); `clusterId` = a cluster coordinator's assigned cluster. | unique `(eventId,userId)`; index `userId`, `hotelId`, `clusterId` |
+| `Hotel` | Belongs to one event (`eventId`); address, coordinates, notes, active flag, optional `clusterId`. A hotel's coordinators are looked up as `EventMember` rows with that `hotelId` and `role = COORDINATOR`, not a direct relation — see `services/hotels.ts`. Each coordinator is assigned to at most one hotel (enforced in the service, not the schema, since it's a property of `EventMember.hotelId` being single-valued). | coords CHECK |
 | `Bus` | Permanent bus record, assigned to one hotel, optional default coordinator. | `hotelId` required (RESTRICT delete); `registration` unique |
 | `BusStop` | Ordered route stops per bus; editable when routes change. | unique `(busId, sequence)`; `sequence > 0`; coords CHECK |
 | `Trip` | One run of a bus with a coordinator on board. Holds current `status`, `statusVersion`, `sharingLocation`. | **partial unique index: one active trip (`endedAt IS NULL`) per bus**; `endedAt >= startedAt` |
@@ -64,3 +65,7 @@ Drops the optional `Event.attendeeCodeHash` added in the previous migration (att
 ## Migration `20261019080000_drop_pin_setup_code`
 
 Drops `User.pinSetupCodeHash` and `User.pinSetupExpiresAt` (and the unique index): staff now choose their first PIN at sign-in when `pinHash` is null. Never deployed to production.
+
+## Migration `20261021090000_cluster_and_multi_hotel_coordinators` (Aawas Yatra Phase 1)
+
+Adds the `CLUSTER_COORDINATOR` role and the `Cluster` model, and replaces `Hotel.coordinatorId` (one coordinator per hotel) with many-to-many hotel coordinators expressed as `EventMember` rows (`hotelId` set, `role = COORDINATOR`) — several coordinators may now share a hotel; each coordinator is still assigned to at most one hotel. Hand-ordered for safety on existing data: adds the new enum value and tables/columns first, **backfills** every hotel's old `coordinatorId` into that coordinator's `EventMember.hotelId` (safe because every coordinator's membership row had a NULL `hotelId` before this — they were never used for coordinators), then drops `Hotel.coordinatorId` and its unique index. Verified on the populated local dev database (4 existing hotel-coordinator assignments backfilled correctly) and the test database; `prisma migrate status` clean afterward. Never deployed to production.

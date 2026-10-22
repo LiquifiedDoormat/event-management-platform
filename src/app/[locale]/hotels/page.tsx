@@ -33,8 +33,8 @@ export default async function HotelsPage({ params, searchParams }: PageProps<"/[
             <ListCard key={h.id} href={`/hotels/${h.id}`} title={h.name}>
               <span className="text-muted">{h.address}</span>
               <span>
-                {h.coordinator ? (
-                  t("coordinatorIs", { name: h.coordinator.name })
+                {h.coordinators.length > 0 ? (
+                  t("coordinatorIs", { name: h.coordinators.map((c) => c.name).join(", ") })
                 ) : (
                   <Badge tone="warn">⚠ {t("noCoordinator")}</Badge>
                 )}

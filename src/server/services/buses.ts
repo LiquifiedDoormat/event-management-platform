@@ -62,7 +62,7 @@ export async function listBuses(
       isActive: true,
       hotel: { select: { id: true, name: true } },
       coordinator: { select: { id: true, name: true } },
-      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true } },
+      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, isDelayed: true } },
     },
   });
   return toPage(rows);
@@ -89,7 +89,7 @@ export async function getBus(actor: Actor, id: string) {
       trips: {
         where: { endedAt: null },
         take: 1,
-        select: { id: true, status: true, statusVersion: true, statusChangedAt: true, coordinator: { select: { id: true, name: true } } },
+        select: { id: true, status: true, statusVersion: true, statusChangedAt: true, isDelayed: true, coordinator: { select: { id: true, name: true } } },
       },
       location: { select: { latitude: true, longitude: true, recordedAt: true } },
     },
@@ -151,15 +151,31 @@ export async function reassignBusHotel(actor: Actor, id: string, hotelId: string
   });
 }
 
-/** Owner only. Sets (or clears) the bus's default coordinator. */
+/**
+ * Owner only. Sets (or clears) the bus's one responsible coordinator. A
+ * coordinator is responsible for at most one bus (DB-unique), so assigning
+ * them here moves them off whatever bus they held before.
+ */
 export async function assignBusCoordinator(actor: Actor, id: string, coordinatorId: string | null) {
   requireCan(actor, "bus.assignCoordinator");
   return prisma.$transaction(async (tx) => {
     const bus = await tx.bus.findFirst({ where: { id, hotel: { eventId: eventOf(actor) } }, select: { coordinatorId: true } });
     if (!bus) throw notFound();
-    if (coordinatorId) await requireActiveCoordinator(tx, coordinatorId, eventOf(actor));
+    let movedFrom: string | null = null;
+    if (coordinatorId) {
+      await requireActiveCoordinator(tx, coordinatorId, eventOf(actor));
+      const previousBus = await tx.bus.findUnique({ where: { coordinatorId }, select: { id: true } });
+      if (previousBus && previousBus.id !== id) {
+        await tx.bus.update({ where: { id: previousBus.id }, data: { coordinatorId: null } });
+        movedFrom = previousBus.id;
+      }
+    }
     await tx.bus.update({ where: { id }, data: { coordinatorId } });
-    await audit(tx, actor, "bus.assignCoordinator", "Bus", id, { from: bus.coordinatorId, to: coordinatorId });
+    await audit(tx, actor, "bus.assignCoordinator", "Bus", id, {
+      from: bus.coordinatorId,
+      to: coordinatorId,
+      ...(movedFrom ? { removedFromBus: movedFrom } : {}),
+    });
   });
 }
 

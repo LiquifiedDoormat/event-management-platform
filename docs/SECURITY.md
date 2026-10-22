@@ -35,27 +35,38 @@
 
 ## Permission matrix (implemented in `src/server/policies/index.ts`)
 
-| Action | Owner | Admin | Coordinator | Customer |
-| --- | :-: | :-: | :-: | :-: |
-| View all hotels, buses, people; event dashboard | ✅ | ✅ | — | — |
-| Create / update hotels and buses, edit bus stops | ✅ | ✅ | — | — |
-| Create accounts | any role except Owner | Customers only | — | — |
-| Edit people | all except other Owners | Customers & Coordinators | — | — |
-| Deactivate hotels, buses, people | ✅ | — | — | — |
-| First hotel allotment for an attendee (no hotel yet) | ✅ | ✅ | — | — |
-| Change attendee hotel; hotel coordinator; bus hotel; bus coordinator | ✅ | — | — | — |
-| Change roles; platform settings; audit log | ✅ | — | — | — |
-| Create / edit events (any event); switch events | ✅ | ✅ | switch between own events only | — |
-| Deactivate / reactivate events | ✅ | — | — | — |
-| Reset PIN (clear it; chosen again at next sign-in) | Admins, Coordinators | Coordinators | — | — |
-| Search attendees of own hotel(s) in current event | ✅ (People) | ✅ (People) | ✅ | — |
-| Start/end trips | ✅ | ✅ | own designated buses | — |
-| Change bus status | ✅ (correction) | ✅ (correction) | own active trip | — |
-| Send GPS location | — | — | own active trip only | — |
-| View own hotel, its coordinator (name + phone), its buses | ✅ | ✅ | designated hotel + hotels of own buses | own hotel only |
-| View a person's details | everyone | everyone | self + attendees of hotels in scope | self only |
+Hotel Coordinator and Cluster Coordinator below are both stored as `Role` values (`COORDINATOR`, `CLUSTER_COORDINATOR`); neither is "staff" (`isStaff()` is Owner/Admin only).
 
-Nothing is hard-deleted through the app except bus stops (route configuration); everything else is deactivated to preserve history. Guard rails: a hotel with active buses/attendees can't be deactivated; a bus or coordinator on an active trip can't be deactivated or (coordinator) have their role changed; nobody can deactivate or change their own role; changing a person's phone number or deactivating them revokes all their sessions.
+| Action | Owner | Admin | Cluster Coordinator | Hotel Coordinator | Customer |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| View all hotels, buses, people; event dashboard | ✅ | ✅ | — | — | — |
+| Create / update hotels and buses, edit bus stops | ✅ | ✅ | — | — | — |
+| Add/remove a hotel's coordinators (many may share a hotel; each coordinator holds at most one hotel) | ✅ | ✅ | — | — | — |
+| Create / manage clusters; assign hotels or coordinators to a cluster | ✅ | ✅ | — | — | — |
+| Create accounts | any role except Owner | Customers only | — | — | — |
+| Edit people | all except other Owners | Customers & both coordinator roles | — | — | — |
+| Deactivate hotels, buses, people | ✅ | — | — | — | — |
+| First hotel allotment for an attendee (no hotel yet) | ✅ | ✅ | — | — | — |
+| Change attendee hotel; bus hotel; bus coordinator | ✅ | — | — | — | — |
+| Change roles; platform settings; audit log | ✅ | — | — | — | — |
+| Create / edit events (any event); switch events | ✅ | ✅ | switch between own events only | switch between own events only | — |
+| Deactivate / reactivate events | ✅ | — | — | — | — |
+| Reset PIN (clear it; chosen again at next sign-in) | Admins, both coordinator roles | both coordinator roles | — | — | — |
+| Search attendees of own hotel(s) in current event | ✅ (People) | ✅ (People) | ✅ (own cluster) | ✅ | — |
+| Start/end trips | ✅ | ✅ | — | own designated buses | — |
+| Change bus status | ✅ (correction) | ✅ (correction) | — | own active trip | — |
+| Send GPS location | — | — | — | own active trip only | — |
+| View hotel details, its coordinators (name + phone), its buses | ✅ | ✅ | every hotel in own cluster | own hotel only | own hotel only |
+| View a person's details | everyone | everyone | self + attendees/hotel-coordinators of own cluster's hotels | self + attendees of own hotel | self only |
+| View a person's **postal address** (PII, narrower than the row above) | ✅ | ✅ | — | — | self only |
+| Create/manage zones and gates; bulk/individual attendee zone assignment | ✅ | ✅ | — | — | — |
+| View/edit own zone assignment | — | — | — | — | view only |
+| Record venue check-in/check-out | ✅ | ✅ | — | — | — |
+| Record bus boarding/departure (attendance) | ✅ (any bus) | ✅ (any bus) | — | own designated bus(es) only | — |
+| View airport-style ops board (`/ops`, all buses) | ✅ | ✅ | — | — | — |
+| View CSV export of attendees (incl. address) | ✅ | ✅ | — | — | — |
+
+Nothing is hard-deleted through the app except bus stops (route configuration); everything else is deactivated to preserve history. Guard rails: a hotel with active buses/attendees can't be deactivated; a bus or coordinator on an active trip can't be deactivated or (coordinator) have their role changed; nobody can deactivate or change their own role; changing a person's phone number or deactivating them revokes all their sessions. Leaving the Hotel Coordinator, Cluster Coordinator or Customer role clears the person's `EventMember.hotelId`/`clusterId` (all events); leaving Hotel Coordinator also clears their bus designations.
 
 Mutations from pages go through Server Actions (`src/features/admin/actions.ts`), which Next.js only accepts from the same origin; every action calls a service that re-checks the policy. Directory and detail pages for hotels, buses, coordinators and people are Owner/Admin only; a 404 is shown for missing or forbidden records.
 
@@ -95,7 +106,13 @@ Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Ref
 - GPS history is sampled and deleted after `EventConfig.locationRetentionDays` (default 7). Only the latest position is kept per bus.
 - Rate-limit keys are SHA-256 hashes, not raw phone numbers or IPs.
 
+## Attendance (append-only)
+
+`AttendanceEvent` rows are never updated or deleted; a correction is a new row, and "current" status is derived from the latest row of each kind. `recordBoarding` rejects boarding an attendee onto a bus outside their own hotel (`attendeeWrongHotel`), enforced for every actor including staff. Concurrent taps (two devices marking the same attendee boarded) are safe by construction: each creates its own row, duplicates are harmless (same derived status), no unique constraint needed.
+
 ## Pending
 
 - Cleanup job for expired sessions and rate-limit buckets (Phase 7 operations).
 - PIN sign-in verified locally (tests + API); not yet on a deployment.
+- `main` is missing all of `feat/bulk-import-and-live-map`'s content (merge-ordering bug — see `PROJECT_MEMORY.md` §6); nothing below PR #9 has been security-reviewed on a live deployment.
+- CSP not yet verified with a live Google Maps key on a real deployment.

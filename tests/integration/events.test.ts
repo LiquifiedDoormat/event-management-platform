@@ -52,7 +52,7 @@ describe.skipIf(!hasTestDb)("event isolation", () => {
   it("can't assign across events (hotels, coordinators, attendees)", async () => {
     const { e1, one, two } = await twoEvents();
     const owner = await staff("OWNER", e1);
-    expect((await code(hotels.assignHotelCoordinator(owner, one.hotelA.id, two.coordA.id))).reason).toBe("notActiveCoordinator");
+    expect((await code(hotels.addHotelCoordinator(owner, one.hotelA.id, two.coordA.id))).reason).toBe("notActiveCoordinator");
     expect((await code(buses.reassignBusHotel(owner, one.busA.id, two.hotelA.id))).reason).toBe("hotelInactive");
     expect((await code(people.setPersonHotel(owner, one.guestA.id, two.hotelA.id))).reason).toBe("hotelInactive");
     expect((await code(buses.createBus(owner, { label: "X", registration: undefined, hotelId: two.hotelA.id }))).reason).toBe("hotelInactive");

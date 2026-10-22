@@ -5,7 +5,7 @@ import { can } from "@/server/policies";
 import { getHotel } from "@/server/services/hotels";
 import { coordinatorOptions } from "@/server/services/people";
 import { orNotFound, requireStaff } from "@/lib/utils/page";
-import { assignHotelCoordinatorAction, setHotelActiveAction, updateHotelAction } from "@/features/admin/actions";
+import { addHotelCoordinatorAction, removeHotelCoordinatorAction, setHotelActiveAction, updateHotelAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField } from "@/components/ui/Fields";
 import { Badge, DetailList, MapsLink, PageHeader, Section } from "@/components/ui/Layout";
@@ -16,7 +16,7 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
   setRequestLocale(locale);
   const user = await requireStaff(locale);
   const hotel = await orNotFound(getHotel(user, id));
-  const canAssign = can(user, "hotel.assignCoordinator");
+  const canAssign = can(user, "hotel.manageCoordinators");
   const [t, tc, format, coordinators] = await Promise.all([
     getTranslations("hotels"),
     getTranslations("common"),
@@ -49,24 +49,37 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
         />
       </Section>
 
-      <Section title={t("coordinator")}>
-        {hotel.coordinator ? (
-          <p className="text-lg">
-            <Link href={`/coordinators/${hotel.coordinator.id}`} className="text-brand font-semibold underline">
-              {hotel.coordinator.name}
-            </Link>{" "}
-            · <a href={`tel:${hotel.coordinator.phone}`} className="underline">📞 {hotel.coordinator.phone}</a>
-          </p>
-        ) : (
+      <Section title={t("coordinators")}>
+        {hotel.coordinators.length === 0 ? (
           <Badge tone="warn">⚠ {t("noCoordinator")}</Badge>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {hotel.coordinators.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center gap-3">
+                <Link href={`/coordinators/${c.id}`} className="text-lg text-brand font-semibold underline">
+                  {c.name}
+                </Link>
+                <a href={`tel:${c.phone}`} className="underline">📞 {c.phone}</a>
+                {canAssign && (
+                  <ActionForm
+                    action={removeHotelCoordinatorAction}
+                    hidden={{ id: hotel.id, coordinatorId: c.id }}
+                    submitLabel={t("remove")}
+                    tone="danger"
+                    inline
+                    confirmMessage={t("confirmRemoveCoordinator", { name: c.name })}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
         )}
         {canAssign && (
-          <ActionForm action={assignHotelCoordinatorAction} hidden={{ id: hotel.id }} submitLabel={t("assign")} inline>
+          <ActionForm action={addHotelCoordinatorAction} hidden={{ id: hotel.id }} submitLabel={t("assign")} inline resetOnSuccess>
             <SelectField
               name="coordinatorId"
               label={t("chooseCoordinator")}
-              defaultValue={hotel.coordinator?.id}
-              emptyLabel={t("none")}
+              emptyLabel={t("choose")}
               hint={t("moveHint")}
               options={coordinators.map((c) => ({
                 value: c.id,

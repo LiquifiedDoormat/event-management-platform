@@ -8,6 +8,7 @@ import {
   canEditPerson,
   canResetPin,
   canSetAttendeeHotel,
+  canViewAddress,
   canViewPerson,
   isStaff,
   type Actor,
@@ -25,7 +26,9 @@ import { OPTIONS_LIMIT, pageArgs, toPage } from "./pagination";
 // and appear in every event's directory.
 
 const STAFF_ROLES: Role[] = ["OWNER", "ADMIN"];
-const PRIVILEGED: Role[] = ["OWNER", "ADMIN", "COORDINATOR"];
+const PRIVILEGED: Role[] = ["OWNER", "ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR"];
+/** Roles that take part in an event through an EventMember row. */
+const MEMBER_ROLES: Role[] = ["CUSTOMER", "COORDINATOR", "CLUSTER_COORDINATOR"];
 
 /** Accounts visible in an event's directory: its members plus staff. */
 const inEvent = (eventId: string): Prisma.UserWhereInput => ({
@@ -58,8 +61,9 @@ const listSelect = (eventId: string) =>
     phone: true,
     role: true,
     status: true,
-    memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } },
-    coordinatedHotels: { where: { eventId }, select: { id: true, name: true } },
+    // An attendee's or hotel coordinator's hotel, or a cluster coordinator's
+    // cluster, in this event — same membership row either way.
+    memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } } } },
     designatedBuses: { where: { isActive: true, hotel: { eventId } }, select: { id: true, label: true } },
   }) satisfies Prisma.UserSelect;
 
@@ -75,9 +79,15 @@ function searchWhere(q?: string): Prisma.UserWhereInput {
   };
 }
 
-const shape = <T extends { memberships: { hotel: { id: string; name: string } | null }[]; coordinatedHotels: { id: string; name: string }[] }>(p: T) => {
-  const { memberships, coordinatedHotels, ...rest } = p;
-  return { ...rest, hotel: memberships[0]?.hotel ?? null, coordinatedHotel: coordinatedHotels[0] ?? null };
+const shape = <
+  T extends {
+    memberships: { hotel: { id: string; name: string } | null; cluster: { id: string; name: string } | null; zone?: { id: string; name: string } | null }[];
+  },
+>(
+  p: T,
+) => {
+  const { memberships, ...rest } = p;
+  return { ...rest, hotel: memberships[0]?.hotel ?? null, cluster: memberships[0]?.cluster ?? null, zone: memberships[0]?.zone ?? null };
 };
 
 /** Directory of the current event: search by name, phone digits or exact id. Staff only. */
@@ -103,6 +113,36 @@ export async function listPeople(
   });
   const page = toPage(rows);
   return { ...page, items: page.items.map(shape) };
+}
+
+/**
+ * Full attendee export for CSV download — every active attendee in the
+ * event, unpaginated, including the postal address (PII; this is why the
+ * route calling this is staff-only, same gate as `dashboard.viewAll`).
+ */
+export async function exportAttendees(actor: Actor) {
+  if (!can(actor, "dashboard.viewAll")) throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.user.findMany({
+    where: { role: "CUSTOMER", status: "ACTIVE", memberships: { some: { eventId } } },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: {
+      name: true,
+      phone: true,
+      address: true,
+      memberships: {
+        where: { eventId },
+        select: { hotel: { select: { name: true } }, zone: { select: { name: true } } },
+      },
+    },
+  });
+  return rows.map((r) => ({
+    name: r.name,
+    phone: r.phone,
+    hotel: r.memberships[0]?.hotel?.name ?? "",
+    zone: r.memberships[0]?.zone?.name ?? "",
+    address: r.address ?? "",
+  }));
 }
 
 /**
@@ -137,6 +177,7 @@ export async function getPerson(actor: Actor, id: string) {
       id: true,
       name: true,
       phone: true,
+      address: true,
       role: true,
       status: true,
       preferredLocale: true,
@@ -144,8 +185,10 @@ export async function getPerson(actor: Actor, id: string) {
       updatedAt: true,
       pinHash: true,
       pinLockedUntil: true,
-      memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } },
-      coordinatedHotels: { where: { eventId }, select: { id: true, name: true } },
+      memberships: {
+        where: { eventId },
+        select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+      },
       designatedBuses: { where: { hotel: { eventId } }, select: { id: true, label: true, isActive: true }, orderBy: { label: "asc" } },
       trips: {
         where: { endedAt: null, bus: { hotel: { eventId } } },
@@ -154,10 +197,14 @@ export async function getPerson(actor: Actor, id: string) {
     },
   });
   if (!person) throw notFound();
-  const { pinHash, pinLockedUntil, ...rest } = shape(person);
+  const { pinHash, pinLockedUntil, address, ...rest } = shape(person);
   const result = {
     ...rest,
+    // PII, more sensitive than name/phone: never sent to the client at all
+    // unless the viewer is allowed to see it, not just hidden in the UI.
+    address: canViewAddress(actor, person.id) ? address : undefined,
     hotelId: rest.hotel?.id ?? null,
+    zoneId: rest.zone?.id ?? null,
     // PIN status only (never the hash), for privileged accounts.
     pin: PRIVILEGED.includes(person.role)
       ? {
@@ -183,7 +230,7 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
   const eventId = eventOf(actor);
   const hotelId = input.role === "CUSTOMER" ? (input.hotelId ?? null) : null;
   if (hotelId && !canSetAttendeeHotel(actor, null)) throw forbidden();
-  const member = input.role === "CUSTOMER" || input.role === "COORDINATOR";
+  const member = MEMBER_ROLES.includes(input.role);
 
   return prisma.$transaction(async (tx) => {
     if (hotelId) await requireActiveHotel(tx, hotelId, eventId);
@@ -199,7 +246,13 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
       return { id: existing.id, addedExisting: true };
     }
     const user = await tx.user.create({
-      data: { name: input.name, phone: input.phone, role: input.role, ...(member ? { memberships: { create: { eventId, hotelId } } } : {}) },
+      data: {
+        name: input.name,
+        phone: input.phone,
+        role: input.role,
+        address: input.role === "CUSTOMER" ? (input.address ?? null) : null,
+        ...(member ? { memberships: { create: { eventId, hotelId } } } : {}),
+      },
       select: { id: true },
     });
     await audit(tx, actor, "person.create", "User", user.id, { role: input.role, eventId: member ? eventId : null, hotelId });
@@ -213,7 +266,7 @@ export async function updatePerson(actor: Actor, id: string, input: PersonUpdate
     return await prisma.$transaction(async (tx) => {
       const target = await findInEvent(tx, id, eventOf(actor));
       if (!can(actor, "person.update") || !canEditPerson(actor, target)) throw forbidden();
-      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone } });
+      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null } });
       const phoneChanged = target.phone !== input.phone;
       if (phoneChanged) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
       await audit(tx, actor, "person.update", "User", id, { phoneChanged });
@@ -238,9 +291,10 @@ export async function setPersonHotel(actor: Actor, id: string, hotelId: string |
 }
 
 /**
- * Owner only. Leaving COORDINATOR removes hotel and bus designations (all
- * events); leaving CUSTOMER removes hotel allotments. Becoming an attendee or
- * coordinator registers the person for the current event.
+ * Owner only. Leaving a membership role (coordinator, cluster coordinator or
+ * attendee) clears their hotel/cluster assignment (all events) and, for a
+ * coordinator, their bus designations. Becoming one registers the person for
+ * the current event.
  */
 export async function changeRole(actor: Actor, id: string, role: Role) {
   if (!can(actor, "person.changeRole") || !assignableRoles(actor).includes(role)) throw forbidden();
@@ -252,11 +306,12 @@ export async function changeRole(actor: Actor, id: string, role: Role) {
     if (target.role === role) return;
     if (target.role === "COORDINATOR") {
       if (await hasActiveTrip(tx, id)) throw conflict("personOnTrip");
-      await tx.hotel.updateMany({ where: { coordinatorId: id }, data: { coordinatorId: null } });
       await tx.bus.updateMany({ where: { coordinatorId: id }, data: { coordinatorId: null } });
     }
-    if (target.role === "CUSTOMER") await tx.eventMember.updateMany({ where: { userId: id }, data: { hotelId: null } });
-    if ((role === "CUSTOMER" || role === "COORDINATOR") && !target.membership) {
+    if (MEMBER_ROLES.includes(target.role)) {
+      await tx.eventMember.updateMany({ where: { userId: id }, data: { hotelId: null, clusterId: null } });
+    }
+    if (MEMBER_ROLES.includes(role) && !target.membership) {
       await tx.eventMember.create({ data: { eventId, userId: id } });
     }
     await tx.user.update({ where: { id }, data: { role } });
@@ -304,7 +359,20 @@ export async function coordinatorOptions(actor: Actor) {
     where: { role: "COORDINATOR", status: "ACTIVE", memberships: { some: { eventId } } },
     orderBy: { name: "asc" },
     take: OPTIONS_LIMIT,
-    select: { id: true, name: true, coordinatedHotels: { where: { eventId }, select: { name: true } } },
+    select: { id: true, name: true, memberships: { where: { eventId }, select: { hotel: { select: { name: true } } } } },
   });
-  return rows.map(({ coordinatedHotels, ...c }) => ({ ...c, coordinatedHotel: coordinatedHotels[0] ?? null }));
+  return rows.map(({ memberships, ...c }) => ({ ...c, coordinatedHotel: memberships[0]?.hotel ?? null }));
+}
+
+/** Active cluster coordinators of the current event, for dropdowns. */
+export async function clusterCoordinatorOptions(actor: Actor) {
+  if (!can(actor, "dashboard.viewAll")) throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.user.findMany({
+    where: { role: "CLUSTER_COORDINATOR", status: "ACTIVE", memberships: { some: { eventId } } },
+    orderBy: { name: "asc" },
+    take: OPTIONS_LIMIT,
+    select: { id: true, name: true, memberships: { where: { eventId }, select: { cluster: { select: { name: true } } } } },
+  });
+  return rows.map(({ memberships, ...c }) => ({ ...c, coordinatedCluster: memberships[0]?.cluster ?? null }));
 }

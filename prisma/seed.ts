@@ -59,15 +59,15 @@ async function main() {
 
     for (const [i, h] of ev.hotels.entries()) {
       const coordinator = await upsertUser(fake(ev.coordinatorPhones[i]), `Coordinator ${ev.coordinatorPhones[i] - 9}`, Role.COORDINATOR, pinHash);
-      await prisma.eventMember.upsert({
-        where: { eventId_userId: { eventId: ev.id, userId: coordinator.id } },
-        update: {},
-        create: { eventId: ev.id, userId: coordinator.id },
-      });
       await prisma.hotel.upsert({
         where: { id: h.id },
-        update: { eventId: ev.id, coordinatorId: coordinator.id },
-        create: { ...h, eventId: ev.id, coordinatorId: coordinator.id },
+        update: { eventId: ev.id },
+        create: { ...h, eventId: ev.id },
+      });
+      await prisma.eventMember.upsert({
+        where: { eventId_userId: { eventId: ev.id, userId: coordinator.id } },
+        update: { hotelId: h.id },
+        create: { eventId: ev.id, userId: coordinator.id, hotelId: h.id },
       });
 
       const busId = `seed-bus-${e * 2 + i + 1}`;

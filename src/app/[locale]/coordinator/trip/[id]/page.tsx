@@ -27,6 +27,7 @@ export default async function TripPage({ params }: PageProps<"/[locale]/coordina
         initialStatus={trip.status}
         initialVersion={trip.statusVersion}
         initialChangedAt={trip.statusChangedAt.toISOString()}
+        initialDelayed={trip.isDelayed}
       />
       <Link href={`/track/${trip.busId}`} className="text-brand font-semibold underline">
         👁 {t("viewAsAttendee")}

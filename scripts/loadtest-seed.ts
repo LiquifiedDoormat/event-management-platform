@@ -100,7 +100,7 @@ async function seed() {
       await prisma.busStop.createMany({
         data: [1, 2, 3].map((s) => ({ busId: bus.id, sequence: s, name: `Stop ${s}`, latitude: 12.97 + s * 0.005, longitude: 77.6 })),
       });
-      const trip = await prisma.trip.create({ data: { busId: bus.id, coordinatorId: coord.id, status: "TO_STOP", sharingLocation: true } });
+      const trip = await prisma.trip.create({ data: { busId: bus.id, coordinatorId: coord.id, status: "DEPARTED_HOTEL", sharingLocation: true } });
       out.coordinators.push({ token: await sessionFor(coord.id), tripId: trip.id, busId: bus.id });
       buses.push(bus.id);
     }

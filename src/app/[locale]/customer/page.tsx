@@ -70,16 +70,20 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
           </Section>
 
           <Section title={t("yourCoordinator")}>
-            {hotel.coordinator ? (
-              <>
-                <p className="text-lg">{hotel.coordinator.name}</p>
-                <a
-                  href={`tel:${hotel.coordinator.phone}`}
-                  className="min-h-12 inline-flex items-center justify-center rounded-lg bg-ok text-white text-lg font-semibold px-4"
-                >
-                  📞 {t("call", { name: hotel.coordinator.name })}
-                </a>
-              </>
+            {hotel.coordinators.length > 0 ? (
+              <ul className="flex flex-col gap-3">
+                {hotel.coordinators.map((c) => (
+                  <li key={c.phone} className="flex flex-col gap-1">
+                    <p className="text-lg">{c.name}</p>
+                    <a
+                      href={`tel:${c.phone}`}
+                      className="min-h-12 self-start inline-flex items-center justify-center rounded-lg bg-ok text-white text-lg font-semibold px-4"
+                    >
+                      📞 {t("call", { name: c.name })}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <p>{t("noCoordinator")}</p>
             )}

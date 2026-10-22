@@ -17,17 +17,47 @@ import { eventOf } from "./context";
 async function findTrip(actor: Actor, tripId: string) {
   const trip = await prisma.trip.findFirst({
     where: { id: tripId, bus: { hotel: { eventId: eventOf(actor) } } },
-    select: { id: true, busId: true, coordinatorId: true, endedAt: true, status: true, statusVersion: true, sharingLocation: true },
+    select: {
+      id: true,
+      busId: true,
+      coordinatorId: true,
+      endedAt: true,
+      status: true,
+      statusVersion: true,
+      sharingLocation: true,
+      isDelayed: true,
+    },
   });
   if (!trip) throw notFound();
   return trip;
 }
 
 /**
- * Coordinators start trips on buses they are designated to (they ride along).
- * Staff can start a trip for the bus's designated coordinator.
+ * The bus's leg lifecycle, enforced for the trip's own coordinator (staff
+ * corrections bypass this — see changeStatus). A trip may start at either
+ * boarding point (the venue in the evening, the hotel in the morning) and
+ * then only advances forward through that direction; ARRIVED_AT_VENUE is the
+ * end of the line for a trip (end it, or start a new one for another round).
  */
-export async function startTrip(actor: Actor, busId: string) {
+const FORWARD_TRANSITIONS: Record<BusStatus, BusStatus[]> = {
+  BOARDING_AT_VENUE: ["DEPARTED_VENUE"],
+  DEPARTED_VENUE: ["ARRIVED_AT_HOTEL"],
+  ARRIVED_AT_HOTEL: ["BOARDING_AT_HOTEL"],
+  BOARDING_AT_HOTEL: ["DEPARTED_HOTEL"],
+  DEPARTED_HOTEL: ["ARRIVED_AT_VENUE"],
+  ARRIVED_AT_VENUE: [],
+};
+
+const START_STATUSES: BusStatus[] = ["BOARDING_AT_VENUE", "BOARDING_AT_HOTEL"];
+
+/**
+ * Coordinators start trips on buses they are designated to (they ride along).
+ * Staff can start a trip for the bus's designated coordinator. `startStatus`
+ * picks the direction: boarding at the venue (evening return) or at the
+ * hotel (morning pickup) — the only two valid starting points.
+ */
+export async function startTrip(actor: Actor, busId: string, startStatus: BusStatus = "BOARDING_AT_VENUE") {
+  if (!START_STATUSES.includes(startStatus)) throw new AppError("invalid", "invalidTransition");
   if (!canStartTrip(actor, await loadScope(actor), busId)) throw forbidden();
   let tripId: string;
   try {
@@ -47,9 +77,9 @@ export async function startTrip(actor: Actor, busId: string) {
 
       // A position left over from an earlier trip must never show as this trip's.
       await tx.busLocation.deleteMany({ where: { busId } });
-      const trip = await tx.trip.create({ data: { busId, coordinatorId, status: "BOARDING" }, select: { id: true } });
-      await tx.busStatusEvent.create({ data: { tripId: trip.id, busId, status: "BOARDING", changedById: actor.id } });
-      await audit(tx, actor, "trip.start", "Trip", trip.id, { busId, coordinatorId });
+      const trip = await tx.trip.create({ data: { busId, coordinatorId, status: startStatus }, select: { id: true } });
+      await tx.busStatusEvent.create({ data: { tripId: trip.id, busId, status: startStatus, changedById: actor.id } });
+      await audit(tx, actor, "trip.start", "Trip", trip.id, { busId, coordinatorId, startStatus });
       return trip.id;
     });
   } catch (err) {
@@ -73,9 +103,29 @@ export async function endTrip(actor: Actor, tripId: string) {
 }
 
 /**
+ * Ends a trip because it was called off, not completed — same effect as
+ * endTrip but recorded as a cancellation (Trip.cancelled), so history and
+ * later dashboards can tell the difference.
+ */
+export async function cancelTrip(actor: Actor, tripId: string) {
+  const trip = await findTrip(actor, tripId);
+  const allowed = can(actor, "trip.manage") || (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id);
+  if (!allowed) throw forbidden();
+  if (trip.endedAt) return;
+  await prisma.$transaction(async (tx) => {
+    await tx.trip.update({ where: { id: tripId }, data: { endedAt: new Date(), sharingLocation: false, cancelled: true } });
+    await tx.busLocation.deleteMany({ where: { tripId } });
+    await audit(tx, actor, "trip.cancel", "Trip", tripId, { busId: trip.busId });
+  });
+}
+
+/**
  * Sets the bus status. `expectedVersion` is the version the user saw; if the
  * status changed since (another device, a double tap), the update is rejected
- * instead of silently overwriting newer information.
+ * instead of silently overwriting newer information. The trip's own
+ * coordinator may only move forward one step at a time (FORWARD_TRANSITIONS);
+ * a staff correction may set any status, since it's a deliberate, audited
+ * override of what actually happened on the ground.
  */
 export async function changeStatus(actor: Actor, tripId: string, status: BusStatus, expectedVersion: number) {
   const trip = await findTrip(actor, tripId);
@@ -83,6 +133,10 @@ export async function changeStatus(actor: Actor, tripId: string, status: BusStat
   if (!canChangeStatus(actor, trip)) throw forbidden();
   if (trip.statusVersion !== expectedVersion) throw conflict("staleStatus");
   if (trip.status === status) return { version: trip.statusVersion };
+  const isCorrection = actor.id !== trip.coordinatorId;
+  if (!isCorrection && !FORWARD_TRANSITIONS[trip.status].includes(status)) {
+    throw new AppError("invalid", "invalidTransition");
+  }
 
   const version = await prisma.$transaction(async (tx) => {
     const updated = await tx.trip.updateMany({
@@ -90,13 +144,25 @@ export async function changeStatus(actor: Actor, tripId: string, status: BusStat
       data: { status, statusChangedAt: new Date(), statusVersion: { increment: 1 } },
     });
     if (updated.count === 0) throw conflict("staleStatus");
-    await tx.busStatusEvent.create({ data: { tripId, busId: trip.busId, status, changedById: actor.id } });
-    if (actor.id !== trip.coordinatorId) {
+    await tx.busStatusEvent.create({ data: { tripId, busId: trip.busId, fromStatus: trip.status, status, changedById: actor.id } });
+    if (isCorrection) {
       await audit(tx, actor, "trip.correctStatus", "Trip", tripId, { from: trip.status, to: status });
     }
     return expectedVersion + 1;
   });
   return { version };
+}
+
+/** Toggles the delayed flag — independent of the leg status, available on any leg. */
+export async function setTripDelayed(actor: Actor, tripId: string, delayed: boolean) {
+  const trip = await findTrip(actor, tripId);
+  if (trip.endedAt) throw conflict("tripEnded");
+  if (!canChangeStatus(actor, trip)) throw forbidden();
+  if (trip.isDelayed === delayed) return;
+  await prisma.$transaction(async (tx) => {
+    await tx.trip.update({ where: { id: tripId }, data: { isDelayed: delayed } });
+    await audit(tx, actor, delayed ? "trip.markDelayed" : "trip.clearDelayed", "Trip", tripId, { busId: trip.busId });
+  });
 }
 
 /** Coordinator turns location sharing on or off for their own active trip. */
@@ -176,6 +242,15 @@ export async function recordLocation(actor: Actor, input: LocationInput): Promis
 export function activeTripsFor(actor: Actor) {
   return prisma.trip.findMany({
     where: { coordinatorId: actor.id, endedAt: null, bus: { hotel: { eventId: eventOf(actor) } } },
-    select: { id: true, busId: true, status: true, statusVersion: true, statusChangedAt: true, sharingLocation: true, bus: { select: { label: true, hotel: { select: { name: true } } } } },
+    select: {
+      id: true,
+      busId: true,
+      status: true,
+      statusVersion: true,
+      statusChangedAt: true,
+      sharingLocation: true,
+      isDelayed: true,
+      bus: { select: { label: true, hotel: { select: { name: true } } } },
+    },
   });
 }

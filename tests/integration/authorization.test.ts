@@ -37,7 +37,7 @@ describe.skipIf(!hasTestDb)("relationship-based authorization", () => {
   it("customer overview exposes only the coordinator's name and phone", async () => {
     const { guestA, coordA } = await createTwoHotels();
     const { hotel } = await getCustomerHome({ ...guestA, eventName: null });
-    expect(hotel?.coordinator).toEqual({ name: coordA.name, phone: coordA.phone });
+    expect(hotel?.coordinators).toEqual([{ name: coordA.name, phone: coordA.phone }]);
     expect(hotel?.buses.map((b) => b.label)).toEqual(["Bus A"]);
   });
 

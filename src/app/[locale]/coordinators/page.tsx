@@ -31,7 +31,7 @@ export default async function CoordinatorsPage({ params, searchParams }: PagePro
           {page.items.map((c) => (
             <ListCard key={c.id} href={`/coordinators/${c.id}`} title={c.name}>
               <span>📞 {c.phone}</span>
-              <span>{c.coordinatedHotel ? `🏨 ${c.coordinatedHotel.name}` : <Badge tone="warn">⚠ {t("noHotel")}</Badge>}</span>
+              <span>{c.hotel ? `🏨 ${c.hotel.name}` : <Badge tone="warn">⚠ {t("noHotel")}</Badge>}</span>
               {c.designatedBuses.length > 0 && <span>🚌 {c.designatedBuses.map((b) => b.label).join(", ")}</span>}
               {c.status === "INACTIVE" && <Badge tone="danger">{tc("inactive")}</Badge>}
             </ListCard>

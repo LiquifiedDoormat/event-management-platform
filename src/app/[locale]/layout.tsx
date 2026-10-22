@@ -21,7 +21,7 @@ const devanagari = Noto_Sans_Devanagari({
   display: "swap",
 });
 
-const CLIENT_NAMESPACES = ["common", "auth", "nav", "forms", "errors", "busStatus", "transport", "trip"] as const;
+const CLIENT_NAMESPACES = ["common", "auth", "nav", "forms", "errors", "busStatus", "transport", "trip", "import"] as const;
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
@@ -89,5 +89,10 @@ async function ProfileLink() {
 
 async function AppName() {
   const t = await getTranslations("common");
-  return <span className="text-lg font-bold">{t("appName")}</span>;
+  return (
+    <span className="flex flex-col leading-tight">
+      <span className="text-lg font-bold text-brand">{t("appName")}</span>
+      <span className="text-xs text-muted">{t("tagline")}</span>
+    </span>
+  );
 }

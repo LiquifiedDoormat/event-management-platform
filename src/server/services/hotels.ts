@@ -36,7 +36,7 @@ export async function listHotels(actor: Actor, opts: { q?: string; cursor?: stri
       name: true,
       address: true,
       isActive: true,
-      coordinator: { select: { id: true, name: true } },
+      members: { where: { user: { role: "COORDINATOR", status: "ACTIVE" } }, select: { user: { select: { id: true, name: true } } } },
       _count: {
         select: {
           buses: { where: { isActive: true } },
@@ -45,7 +45,7 @@ export async function listHotels(actor: Actor, opts: { q?: string; cursor?: stri
       },
     },
   });
-  return toPage(rows);
+  return toPage(rows.map(({ members, ...h }) => ({ ...h, coordinators: members.map((m) => m.user) })));
 }
 
 export async function getHotel(actor: Actor, id: string) {
@@ -62,7 +62,11 @@ export async function getHotel(actor: Actor, id: string) {
       isActive: true,
       createdAt: true,
       updatedAt: true,
-      coordinator: { select: { id: true, name: true, phone: true, status: true } },
+      members: {
+        where: { user: { role: "COORDINATOR" } },
+        orderBy: { user: { name: "asc" } },
+        select: { user: { select: { id: true, name: true, phone: true, status: true } } },
+      },
       buses: {
         orderBy: { label: "asc" },
         select: { id: true, label: true, registration: true, isActive: true },
@@ -71,7 +75,8 @@ export async function getHotel(actor: Actor, id: string) {
     },
   });
   if (!hotel) throw notFound();
-  return hotel;
+  const { members, ...rest } = hotel;
+  return { ...rest, coordinators: members.map((m) => m.user) };
 }
 
 export async function createHotel(actor: Actor, input: HotelInput) {
@@ -124,35 +129,38 @@ export async function setHotelActive(actor: Actor, id: string, isActive: boolean
 }
 
 /**
- * Owner only. Sets (or clears) a hotel's designated coordinator. A coordinator
- * designates at most one hotel, so they are moved off any previous hotel.
+ * Adds an active coordinator to a hotel's roster. Several coordinators may
+ * share a hotel, but each coordinator is assigned to at most one hotel, so
+ * adding them here moves them off whatever hotel they held before.
  */
-export async function assignHotelCoordinator(actor: Actor, hotelId: string, coordinatorId: string | null) {
-  requireCan(actor, "hotel.assignCoordinator");
+export async function addHotelCoordinator(actor: Actor, hotelId: string, coordinatorId: string) {
+  requireCan(actor, "hotel.manageCoordinators");
+  const eventId = eventOf(actor);
   return prisma.$transaction(async (tx) => {
-    const eventId = eventOf(actor);
-    const hotel = await tx.hotel.findFirst({ where: { id: hotelId, eventId }, select: { coordinatorId: true } });
+    const hotel = await tx.hotel.findFirst({ where: { id: hotelId, eventId }, select: { id: true } });
     if (!hotel) throw notFound();
-    let movedFrom: string | null = null;
-    if (coordinatorId) {
-      // Must be an active coordinator registered for this event.
-      const coordinator = await tx.user.findFirst({
-        where: { id: coordinatorId, role: "COORDINATOR", status: "ACTIVE", memberships: { some: { eventId } } },
-        select: { id: true },
-      });
-      if (!coordinator) throw new AppError("invalid", "notActiveCoordinator");
-      // A coordinator designates at most one hotel per event.
-      movedFrom = (await tx.hotel.findFirst({ where: { eventId, coordinatorId }, select: { id: true } }))?.id ?? null;
-      if (movedFrom && movedFrom !== hotelId) {
-        await tx.hotel.update({ where: { id: movedFrom }, data: { coordinatorId: null } });
-      }
-    }
-    await tx.hotel.update({ where: { id: hotelId }, data: { coordinatorId } });
-    await audit(tx, actor, "hotel.assignCoordinator", "Hotel", hotelId, {
-      from: hotel.coordinatorId,
-      to: coordinatorId,
-      ...(movedFrom && movedFrom !== hotelId ? { removedFromHotel: movedFrom } : {}),
+    const coordinator = await tx.user.findFirst({ where: { id: coordinatorId, role: "COORDINATOR", status: "ACTIVE" }, select: { id: true } });
+    if (!coordinator) throw new AppError("invalid", "notActiveCoordinator");
+    const membership = await tx.eventMember.findUnique({
+      where: { eventId_userId: { eventId, userId: coordinatorId } },
+      select: { id: true, hotelId: true },
     });
+    if (!membership) throw new AppError("invalid", "notActiveCoordinator");
+    if (membership.hotelId === hotelId) return;
+    await tx.eventMember.update({ where: { id: membership.id }, data: { hotelId } });
+    await audit(tx, actor, "hotel.addCoordinator", "Hotel", hotelId, { coordinatorId, movedFrom: membership.hotelId });
+  });
+}
+
+/** Removes a coordinator from a hotel's roster. Their account is untouched, just unassigned. */
+export async function removeHotelCoordinator(actor: Actor, hotelId: string, coordinatorId: string) {
+  requireCan(actor, "hotel.manageCoordinators");
+  const eventId = eventOf(actor);
+  return prisma.$transaction(async (tx) => {
+    const membership = await tx.eventMember.findFirst({ where: { eventId, userId: coordinatorId, hotelId }, select: { id: true } });
+    if (!membership) throw notFound();
+    await tx.eventMember.update({ where: { id: membership.id }, data: { hotelId: null } });
+    await audit(tx, actor, "hotel.removeCoordinator", "Hotel", hotelId, { coordinatorId });
   });
 }
 
@@ -165,4 +173,16 @@ export async function hotelOptions(actor: Actor) {
     take: OPTIONS_LIMIT,
     select: { id: true, name: true },
   });
+}
+
+/** Active hotels for dropdowns, with their current cluster (if any) for labeling. */
+export async function hotelOptionsWithCluster(actor: Actor) {
+  requireCan(actor, "dashboard.viewAll");
+  const rows = await prisma.hotel.findMany({
+    where: { isActive: true, eventId: eventOf(actor) },
+    orderBy: { name: "asc" },
+    take: OPTIONS_LIMIT,
+    select: { id: true, name: true, cluster: { select: { name: true } } },
+  });
+  return rows.map(({ cluster, ...h }) => ({ ...h, currentCluster: cluster }));
 }

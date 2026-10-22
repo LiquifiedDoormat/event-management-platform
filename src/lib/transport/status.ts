@@ -4,12 +4,16 @@ import type { BusStatus } from "@/generated/prisma/enums";
 export type StatusKind = "boarding" | "moving" | "arrived";
 
 export const STATUS_KIND: Record<BusStatus, StatusKind> = {
-  BOARDING: "boarding",
-  TO_HOTEL: "moving",
-  TO_STOP: "moving",
-  AT_HOTEL: "arrived",
-  AT_STOP: "arrived",
+  BOARDING_AT_VENUE: "boarding",
+  DEPARTED_VENUE: "moving",
+  ARRIVED_AT_HOTEL: "arrived",
+  BOARDING_AT_HOTEL: "boarding",
+  DEPARTED_HOTEL: "moving",
+  ARRIVED_AT_VENUE: "arrived",
 };
+
+/** The two valid starting legs for a trip (see services/trips.ts). */
+export const START_STATUSES = ["BOARDING_AT_VENUE", "BOARDING_AT_HOTEL"] as const satisfies readonly BusStatus[];
 
 export const STATUS_ICON: Record<StatusKind, string> = { boarding: "🧍", moving: "🚌", arrived: "📍" };
 

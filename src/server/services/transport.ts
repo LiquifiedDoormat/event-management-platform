@@ -21,8 +21,8 @@ export async function getEventSettings() {
 
 /**
  * An attendee's homepage data: their own hotel (read from their current
- * allotment), its coordinator's name and phone only, and its active buses with
- * the latest status and location timestamp. Never includes other hotels.
+ * allotment), its active coordinators' names and phones, and its active buses
+ * with the latest status and location timestamp. Never includes other hotels.
  */
 export async function getCustomerHome(user: SessionUser) {
   const [settings, hotel] = await Promise.all([
@@ -35,7 +35,11 @@ export async function getCustomerHome(user: SessionUser) {
             address: true,
             latitude: true,
             longitude: true,
-            coordinator: { where: { status: "ACTIVE" }, select: { name: true, phone: true } },
+            members: {
+              where: { user: { role: "COORDINATOR", status: "ACTIVE" } },
+              orderBy: { user: { name: "asc" } },
+              select: { user: { select: { name: true, phone: true } } },
+            },
             buses: {
               where: { isActive: true },
               orderBy: { label: "asc" },
@@ -43,7 +47,7 @@ export async function getCustomerHome(user: SessionUser) {
                 id: true,
                 label: true,
                 _count: { select: { stops: true } },
-                trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true } },
+                trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true, isDelayed: true } },
                 location: { select: { latitude: true, longitude: true, accuracy: true, recordedAt: true } },
               },
             },
@@ -51,7 +55,8 @@ export async function getCustomerHome(user: SessionUser) {
         })
       : Promise.resolve(null),
   ]);
-  return { settings, hotel };
+  const shaped = hotel ? (({ members, ...rest }) => ({ ...rest, coordinators: members.map((m) => m.user) }))(hotel) : null;
+  return { settings, hotel: shaped };
 }
 
 /**
@@ -80,6 +85,7 @@ export async function getTrackedBus(actor: Actor, busId: string) {
           status: true,
           statusChangedAt: true,
           sharingLocation: true,
+          isDelayed: true,
           // Contact for the person accompanying this bus (operational purpose).
           coordinator: { select: { name: true, phone: true } },
         },
@@ -94,14 +100,16 @@ export async function getTrackedBus(actor: Actor, busId: string) {
   return { bus, settings };
 }
 
-type TripRow = { status: BusStatus; statusChangedAt: Date; sharingLocation: boolean };
+type TripRow = { status: BusStatus; statusChangedAt: Date; sharingLocation: boolean; isDelayed: boolean };
 type LocationRow = { latitude: number; longitude: number; accuracy: number | null; recordedAt: Date };
 
 /** Builds the browser snapshot from rows already loaded for a page. */
 export function toSnapshot(busId: string, trip: TripRow | undefined, location: LocationRow | null | undefined): BusLiveSnapshot {
   return {
     busId,
-    trip: trip ? { status: trip.status, statusChangedAt: trip.statusChangedAt.toISOString(), sharingLocation: trip.sharingLocation } : null,
+    trip: trip
+      ? { status: trip.status, statusChangedAt: trip.statusChangedAt.toISOString(), sharingLocation: trip.sharingLocation, isDelayed: trip.isDelayed }
+      : null,
     location: location ? { ...location, recordedAt: location.recordedAt.toISOString() } : null,
   };
 }
@@ -111,7 +119,7 @@ export async function getBusSnapshot(busId: string): Promise<BusLiveSnapshot> {
   const bus = await prisma.bus.findUnique({
     where: { id: busId },
     select: {
-      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true } },
+      trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true, isDelayed: true } },
       location: { select: { latitude: true, longitude: true, accuracy: true, recordedAt: true } },
     },
   });

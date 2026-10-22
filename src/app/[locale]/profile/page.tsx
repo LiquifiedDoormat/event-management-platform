@@ -14,11 +14,12 @@ export default async function ProfilePage({ params, searchParams }: PageProps<"/
   setRequestLocale(locale);
   const user = await requireUser(locale);
   const saved = param((await searchParams).saved) === "1";
-  const [t, tc, tr, hotel] = await Promise.all([
+  const [t, tc, tr, hotel, self] = await Promise.all([
     getTranslations("profile"),
     getTranslations("common"),
     getTranslations("roles"),
     user.hotelId ? prisma.hotel.findUnique({ where: { id: user.hotelId }, select: { name: true } }) : Promise.resolve(null),
+    user.role === "CUSTOMER" ? prisma.user.findUnique({ where: { id: user.id }, select: { address: true } }) : Promise.resolve(null),
   ]);
 
   return (
@@ -37,7 +38,12 @@ export default async function ProfilePage({ params, searchParams }: PageProps<"/
             [t("name"), user.name],
             [t("phone"), user.phone],
             [t("role"), tr(user.role)],
-            ...(user.role === "CUSTOMER" ? ([[t("hotel"), hotel?.name ?? "—"]] as [string, string][]) : []),
+            ...(user.role === "CUSTOMER"
+              ? ([
+                  [t("hotel"), hotel?.name ?? "—"],
+                  [t("address"), self?.address ?? "—"],
+                ] as [string, string][])
+              : []),
           ]}
         />
         <p className="text-muted">{t("changeDetailsHelp")}</p>

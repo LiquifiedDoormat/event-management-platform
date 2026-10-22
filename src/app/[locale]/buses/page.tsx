@@ -15,10 +15,11 @@ export default async function BusesPage({ params, searchParams }: PageProps<"/[l
   const cursor = param(sp.cursor);
   const hotelId = param(sp.hotelId);
   const show = param(sp.show);
-  const [t, td, ts, page, hotels] = await Promise.all([
+  const [t, td, ts, tt, page, hotels] = await Promise.all([
     getTranslations("buses"),
     getTranslations("directory"),
     getTranslations("busStatus"),
+    getTranslations("trip"),
     listBuses(user, { q, cursor, hotelId, includeInactive: show === "all" }),
     hotelOptions(user),
   ]);
@@ -41,7 +42,10 @@ export default async function BusesPage({ params, searchParams }: PageProps<"/[l
                 {b.registration && <span className="text-muted">{b.registration}</span>}
                 <span>🏨 {b.hotel.name}</span>
                 <span>{b.coordinator ? t("coordinatorIs", { name: b.coordinator.name }) : t("noCoordinator")}</span>
-                <span>{trip ? <Badge tone="ok">{ts(trip.status)}</Badge> : <Badge>{t("noTrip")}</Badge>}</span>
+                <span>
+                  {trip ? <Badge tone="ok">{ts(trip.status)}</Badge> : <Badge>{t("noTrip")}</Badge>}
+                  {trip?.isDelayed && <Badge tone="warn">⚠ {tt("delayed")}</Badge>}
+                </span>
                 {!b.isActive && <Badge tone="danger">{td("inactive")}</Badge>}
               </ListCard>
             );

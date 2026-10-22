@@ -12,7 +12,8 @@ import { run } from "@/features/run-action";
 import type { ActionState } from "@/features/admin/action-state";
 
 const id = z.string().min(1).max(40);
-const status = z.enum(["BOARDING", "TO_HOTEL", "AT_HOTEL", "TO_STOP", "AT_STOP"]);
+const status = z.enum(["BOARDING_AT_VENUE", "DEPARTED_VENUE", "ARRIVED_AT_HOTEL", "BOARDING_AT_HOTEL", "DEPARTED_HOTEL", "ARRIVED_AT_VENUE"]);
+const startStatus = z.enum(["BOARDING_AT_VENUE", "BOARDING_AT_HOTEL"]);
 
 export type TripResult = { ok: true; version?: number } | { ok: false; message: string };
 
@@ -41,8 +42,16 @@ export async function setSharingDirect(tripId: string, sharing: boolean) {
   return direct((u) => trips.setSharing(u, id.parse(tripId), z.boolean().parse(sharing)));
 }
 
+export async function setDelayedDirect(tripId: string, delayed: boolean) {
+  return direct((u) => trips.setTripDelayed(u, id.parse(tripId), z.boolean().parse(delayed)));
+}
+
 export async function endTripDirect(tripId: string) {
   return direct((u) => trips.endTrip(u, id.parse(tripId)));
+}
+
+export async function cancelTripDirect(tripId: string) {
+  return direct((u) => trips.cancelTrip(u, id.parse(tripId)));
 }
 
 // ---- Form actions ---------------------------------------------------------
@@ -50,13 +59,21 @@ export async function endTripDirect(tripId: string) {
 /** Coordinators are taken straight to the trip controls; staff stay on the bus page. */
 export async function startTripAction(_: ActionState, form: FormData) {
   return run(form, async (u, d) => {
-    const trip = await trips.startTrip(u, id.parse(d.busId));
+    const trip = await trips.startTrip(u, id.parse(d.busId), startStatus.parse(d.startStatus));
     return u.role === "COORDINATOR" ? `/coordinator/trip/${trip.id}` : undefined;
   });
 }
 
 export async function endTripAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => trips.endTrip(u, id.parse(d.tripId)));
+}
+
+export async function cancelTripAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => trips.cancelTrip(u, id.parse(d.tripId)));
+}
+
+export async function setDelayedAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => trips.setTripDelayed(u, id.parse(d.tripId), d.delayed === "true"));
 }
 
 export async function correctStatusAction(_: ActionState, form: FormData) {

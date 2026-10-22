@@ -8,7 +8,7 @@ Mobile-first, English/Hindi web app for running event logistics across **multipl
 
 - **Events:** independent events, each with its own hotels, buses, coordinators and attendees; chosen on the sign-in page; Owner/Admin can switch events without signing out.
 - **Sign-in without SMS:** Owner/Admin/Coordinator use phone + 6-digit PIN (first PIN chosen at first sign-in; forgotten PINs reset by an administrator); attendees use phone number + event. Persistent sessions; sign-out.
-- **Roles:** Owner, Admin, Coordinator, Attendee (read-only), enforced on the server.
+- **Roles:** Owner, Admin, Cluster Coordinator, Hotel Coordinator, Attendee (read-only), enforced on the server. A hotel may now have several hotel coordinators (each one still runs at most one hotel); a cluster coordinator has read-only oversight of every hotel in their assigned cluster (`Cluster` model — optional grouping; see `docs/SECURITY.md` for the full permission matrix). The cluster coordinator's operational dashboard is not built yet — only sign-in, role assignment and a read-only "your cluster" page exist so far.
 - Hotel, bus (with stops), coordinator and people directories; assignments; audit log.
 - Coordinators: trip controls, large status buttons, GPS sharing from the phone, searchable list of attendees at their hotel.
 - Attendees: their hotel, coordinator, buses, stops, live status and position (updated by polling).
@@ -16,7 +16,7 @@ Mobile-first, English/Hindi web app for running event logistics across **multipl
 
 ## Tech stack
 
-Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · next-intl · Zod · Prisma 7 · PostgreSQL 17 · Vitest. Hosting target: Vercel + managed Postgres (Neon). Optional: Google Maps JavaScript API.
+Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · next-intl · Zod · Prisma 7 · PostgreSQL 17 · Vitest. Hosting target: Vercel + managed Postgres (Neon). Optional: Google Maps JavaScript API. Bulk import reads `.xlsx` files with `exceljs` (added for this feature; `.csv` is parsed by a small built-in parser — the popular `xlsx`/SheetJS package was deliberately avoided, as its published versions have unfixed high-severity ReDoS/prototype-pollution advisories that are directly reachable when parsing untrusted uploaded files).
 
 ## Prerequisites
 
@@ -74,7 +74,30 @@ The demo PIN exists only in local seed data.
 
 - Attendee pages fetch the bus status/position every **20 s** while a trip is running (60 s otherwise), only while the page is visible.
 - Coordinators' phones send GPS about every 5–10 s while moving (browser Geolocation API; needs HTTPS and the page kept open).
-- Maps: without a key the app shows addresses and **"Open in Google Maps"** links (no cost). The embedded map needs a Google Cloud billing account (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`); leave it empty to stay at zero provider cost.
+- Maps: without a key the app shows addresses and **"Open in Google Maps"** links — no embedded map, no cost, nothing to set up. With a key, the attendee tracking page (`/track/[busId]`) embeds a real interactive Google Map with a marker for the bus's latest position, which moves as new GPS readings arrive (no page reload, no map re-creation). The Google Maps link is still shown alongside it, and is the only thing shown if the map fails to load.
+
+### Google Maps setup (optional)
+
+Needed only for the embedded map; the app works fully without it (links only, zero cost). Two environment variables, both safe to expose to the browser (`NEXT_PUBLIC_*`):
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | For the embedded map | Loads the Maps JavaScript API. Missing, empty, or left as the `.env.example` placeholder → the app falls back to links automatically ([`src/lib/maps/config.ts`](src/lib/maps/config.ts)). |
+| `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | Optional | A Map ID is required for the colored pin markers (Advanced Markers) the app uses. Falls back to Google's public `DEMO_MAP_ID`, which works but is watermarked/rate-limited — create your own for real use. |
+
+**In Google Cloud Console:**
+
+1. Create or select a project, then enable **billing** on it (Maps JavaScript API requires a billing account; Google gives a recurring free monthly credit — see [Costs](#costs)).
+2. **APIs & Services → Library** → enable **Maps JavaScript API**.
+3. **APIs & Services → Credentials → Create credentials → API key.** Then click the new key and restrict it:
+   - **Application restrictions:** *Websites* → add your domain(s), e.g. `https://your-app.vercel.app/*`, `https://your-custom-domain.com/*`, and (only while developing) `http://localhost:3000/*`.
+   - **API restrictions:** *Restrict key* → select only **Maps JavaScript API**.
+4. **Google Maps Platform → Map Management → Create Map ID** — Map type **JavaScript**, and turn **on** vector rendering (required for Advanced Markers, which is what the bus/hotel/stop pins use). Copy the Map ID.
+5. Put the key in `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and the Map ID in `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`.
+
+**In Vercel:** Project → **Settings → Environment Variables** → add both for whichever environments should have the embedded map (Production/Preview/Development), then **redeploy** (`NEXT_PUBLIC_*` values are baked in at build time — changing them needs a new build, not just a restart). See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) § Vercel environment variables.
+
+A revoked/invalid key, or one restricted to the wrong domain, makes the map show a translated "could not be loaded" message with the Google Maps link underneath — it never crashes the page or silently shows a blank map.
 
 ## Costs
 
@@ -92,6 +115,31 @@ No SMS, OTP, realtime or map fees are required. Remaining possible costs are hos
 4. **End trip** when done.
 
 **GPS limits:** a website can't track reliably in the background; continuous background tracking would need a native app. Laptops often have no GPS: they report approximate Wi-Fi positions, which the app flags as approximate.
+
+## Managing hotels, coordinators, attendees and buses
+
+Pick an event (Owner/Admin → **Events** → switch), then use either:
+
+- **Manual forms** — Hotels, Buses, Coordinators and People (which covers both attendee and coordinator accounts) each have **Add**/edit pages with assignment controls (hotel ↔ coordinator, bus ↔ hotel, attendee ↔ hotel). Reached from the bottom nav / top bar as Owner or Admin.
+- **Bulk import** (Owner/Admin → **Import** in the nav) — upload a `.csv` or `.xlsx` file to create many records at once.
+  1. Choose what you're importing and download the sample file for the exact column names (the **Import** page shows required vs. optional columns for the selected type).
+  2. Upload your file and click **Preview** — nothing is written yet. The preview lists, per row, whether it's ready to import, a duplicate (skipped), or has an error (with the row number and what's wrong).
+  3. Fix and re-upload if needed, or click **Import** to write the rows that passed. The result reports how many were created, added to this event (an existing person joining from another event), skipped as duplicates, or failed.
+
+  **Columns:**
+
+  | Entity | Required | Optional |
+  | --- | --- | --- |
+  | Hotels | `name`, `address` | `latitude`, `longitude`, `notes` |
+  | Coordinators (Owner only) | `name`, `phone` | `hotelName` (designates them coordinator of that hotel) |
+  | Attendees | `name`, `phone` | `hotelName` (their room allotment) |
+  | Buses | `label`, `hotelName` | `registration`, `routeNotes`, `coordinatorPhone` |
+
+  **Matching/duplicate rules:** hotels are matched by exact name (case-insensitive) within the event; a second row with the same name is skipped as a duplicate. Buses with a registration number are matched by registration (globally unique); without one, by hotel + label. People are matched by phone number, which is unique across the whole app, not per event — a phone already registered for *this* event is skipped as a duplicate, the same phone registered for a *different* event joins this one too (not a duplicate), and a phone already belonging to a different role is reported as an error rather than silently skipped. `hotelName` must exactly match (case-insensitive) one active hotel already in the event — create hotels first, or import them in a separate earlier run.
+
+  **`coordinatorPhone` (buses, optional):** assigns that bus's default coordinator — the same "assign coordinator" action as the manual bus-edit page, so it's **Owner only** (same rule as importing Coordinators). It must match the phone number of an *existing, active* coordinator already registered for the event, so import Coordinators before Buses if you're using this column. If an Admin's file has values in this column, those rows are reported as errors rather than silently dropping the assignment — leave the column blank (or out of the file) for an Admin-run buses import. A coordinator can be the default coordinator of more than one bus.
+
+  **Limits:** 5 MB per file, 2,000 data rows per file (split larger lists into multiple imports). Only Owner/Admin can import; importing Coordinators needs Owner (the same rule as creating a coordinator manually).
 
 ## Data retention
 

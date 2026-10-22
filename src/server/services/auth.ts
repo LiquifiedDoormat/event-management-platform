@@ -7,9 +7,9 @@ import { rateLimit, resetRateLimit } from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/utils/phone";
 
 // Sign-in without paid SMS:
-// - Owner/Admin/Coordinator: phone + 6-digit PIN. An account without a PIN
-//   (new, or reset by an admin) chooses one at its next sign-in with the phone
-//   number only (owner decision; risk documented in SECURITY.md).
+// - Owner/Admin/Cluster Coordinator/Coordinator: phone + 6-digit PIN. An account
+//   without a PIN (new, or reset by an admin) chooses one at its next sign-in
+//   with the phone number only (owner decision; risk documented in SECURITY.md).
 // - Attendees: registered phone number + event.
 //   Attendee sessions are read-only by role (see policies).
 // Every path chooses an event; access to it is checked here and on every request.
@@ -19,7 +19,7 @@ export type LoginResult =
   | { status: "invalid" | "no_event_access" | "weak_pin" | "pin_mismatch" }
   | { status: "rate_limited"; retryAfterSeconds: number };
 
-const PRIVILEGED: Role[] = ["OWNER", "ADMIN", "COORDINATOR"];
+const PRIVILEGED: Role[] = ["OWNER", "ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR"];
 const LOCK_AFTER = 5;
 const LOCK_MINUTES = 15;
 const LIMITS = {
@@ -191,5 +191,11 @@ export async function logout(token: string | undefined) {
 
 /** Where each role lands after sign-in (locale prefix added by the caller). */
 export function roleHome(role: Role): string {
-  return { OWNER: "/owner", ADMIN: "/admin", COORDINATOR: "/coordinator", CUSTOMER: "/customer" }[role];
+  return {
+    OWNER: "/owner",
+    ADMIN: "/admin",
+    CLUSTER_COORDINATOR: "/cluster-coordinator",
+    COORDINATOR: "/coordinator",
+    CUSTOMER: "/customer",
+  }[role];
 }
