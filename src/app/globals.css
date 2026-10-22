@@ -11,6 +11,8 @@
   --color-ok: #15803d;
   --color-warn: #b45309;
   --color-danger: #b91c1c;
+  /* "Travelling" status only (bus dashboard row/badge colour-coding) — distinct from --color-brand. */
+  --color-info: #1d4ed8;
   --font-sans: var(--font-latin), var(--font-devanagari), system-ui, sans-serif;
 }
 
@@ -24,6 +26,13 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   line-height: 1.5;
+}
+
+/* The login page supplies its own full-bleed background image (see `.login-bg`);
+   let it show through instead of the solid body background behind it. Scoped to
+   that one page via :has() so every other page is unaffected. */
+body:has(.login-bg) {
+  background: transparent;
 }
 
 :focus-visible {

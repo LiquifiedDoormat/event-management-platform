@@ -33,6 +33,7 @@ const badgeTones = {
   ok: "border-ok text-ok",
   warn: "border-warn text-warn",
   danger: "border-danger text-danger",
+  info: "border-info text-info",
 } as const;
 
 /** Text label with a coloured border; colour is never the only signal. */
@@ -44,12 +45,23 @@ export function Badge({ tone = "neutral", children }: { tone?: keyof typeof badg
   );
 }
 
-export function ListCard({ href, title, children }: { href: string; title: string; children?: ReactNode }) {
+export function ListCard({
+  href,
+  title,
+  children,
+  className = "",
+}: {
+  href: string;
+  title: string;
+  children?: ReactNode;
+  /** Extra classes on the row (e.g. a status-colour background); appended after the defaults. */
+  className?: string;
+}) {
   return (
     <li>
       <Link
         href={href}
-        className="block rounded-lg border border-line p-4 hover:border-brand focus-visible:border-brand"
+        className={`block rounded-lg border p-4 hover:border-brand focus-visible:border-brand ${className || "border-line"}`}
       >
         <span className="text-lg font-semibold text-brand underline-offset-4 hover:underline">{title}</span>
         <div className="mt-1 flex flex-col gap-1 text-base">{children}</div>

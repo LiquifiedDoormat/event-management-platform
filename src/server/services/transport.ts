@@ -114,28 +114,49 @@ export function toSnapshot(busId: string, trip: TripRow | undefined, location: L
   };
 }
 
-/** Current live state of a bus (active trip + latest position), as sent to browsers. */
-export async function getBusSnapshot(busId: string): Promise<BusLiveSnapshot> {
-  const bus = await prisma.bus.findUnique({
-    where: { id: busId },
+type LiveBusRow = { hotelId: string; isActive: boolean; trips: TripRow[]; location: LocationRow | null };
+
+/**
+ * Short-lived, per-process cache for the polling endpoint. Many attendees of the
+ * same bus poll independently every 20-60s; with ~100+ viewers sharing a bus this
+ * collapses near-simultaneous polls into one query instead of one-per-viewer.
+ * Caches the in-flight promise (not just the resolved value) so concurrent callers
+ * within the window share a single query. Keyed by event too, since a bus id is
+ * only unique within its own event's data set from the actor's point of view.
+ * 3s is well under the 20s "active trip" poll interval, so no viewer perceives
+ * staler data than before — `location.recordedAt` is the real DB timestamp, so
+ * freshness labels in the UI stay accurate regardless of cache age.
+ */
+const SNAPSHOT_CACHE_TTL_MS = 3_000;
+const liveBusCache = new Map<string, { expires: number; promise: Promise<LiveBusRow | null> }>();
+
+function loadLiveBusRow(eventId: string, busId: string): Promise<LiveBusRow | null> {
+  const key = `${eventId}:${busId}`;
+  const now = Date.now();
+  const hit = liveBusCache.get(key);
+  if (hit && hit.expires > now) return hit.promise;
+  const promise = prisma.bus.findFirst({
+    where: { id: busId, hotel: { eventId } },
     select: {
+      hotelId: true,
+      isActive: true,
       trips: { where: { endedAt: null }, take: 1, select: { status: true, statusChangedAt: true, sharingLocation: true, isDelayed: true } },
       location: { select: { latitude: true, longitude: true, accuracy: true, recordedAt: true } },
     },
   });
-  return toSnapshot(busId, bus?.trips[0], bus?.location);
+  liveBusCache.set(key, { expires: now + SNAPSHOT_CACHE_TTL_MS, promise });
+  // A failed query must not be served to the next caller for the rest of the window.
+  promise.catch(() => liveBusCache.delete(key));
+  return promise;
 }
 
-/** Throws not_found unless `actor` may view this bus (same rule as the tracking page). */
-export async function assertCanViewBus(actor: Actor, busId: string) {
-  // Only buses of the actor's current event exist from their point of view.
-  const bus = await prisma.bus.findFirst({ where: { id: busId, hotel: { eventId: eventOf(actor) } }, select: { hotelId: true, isActive: true } });
+/**
+ * Snapshot for an authorized viewer (polling fallback). Combines the permission
+ * check and the data fetch into one (cached) query instead of two separate ones.
+ */
+export async function getLiveBus(actor: Actor, busId: string) {
+  const bus = await loadLiveBusRow(eventOf(actor), busId);
   if (!bus || (!bus.isActive && !isStaff(actor))) throw notFound();
   if (!canViewBus(actor, await loadScope(actor), bus)) throw notFound();
-}
-
-/** Snapshot for an authorized viewer (polling fallback). */
-export async function getLiveBus(actor: Actor, busId: string) {
-  await assertCanViewBus(actor, busId);
-  return getBusSnapshot(busId);
+  return toSnapshot(busId, bus.trips[0], bus.location);
 }

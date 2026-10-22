@@ -2,17 +2,11 @@
 
 import { useFormatter, useNow, useTranslations } from "next-intl";
 import type { BusStatus } from "@/generated/prisma/enums";
-import { STATUS_ICON, STATUS_KIND, locationFreshness, type Freshness } from "@/lib/transport/status";
+import { DELAYED_ROW_STYLE, STATUS_ICON, STATUS_KIND, STATUS_ROW_STYLE, STATUS_TEXT_CLASS, locationFreshness, type Freshness } from "@/lib/transport/status";
 import type { MapPoint } from "@/lib/maps/config";
 import type { BusLiveSnapshot } from "@/lib/realtime/types";
 import { useBusLive, type LiveMode } from "@/hooks/useBusLive";
 import { LocationMap } from "@/components/maps/LocationMap";
-
-const KIND_STYLE = {
-  boarding: "border-warn bg-amber-50 text-warn",
-  moving: "border-brand bg-orange-50 text-brand",
-  arrived: "border-ok bg-green-50 text-ok",
-} as const;
 
 function StatusPanel({
   status,
@@ -34,13 +28,15 @@ function StatusPanel({
   const text = large ? "text-2xl" : "text-lg";
   if (!status) return <p className={`rounded-lg border-2 border-line p-3 font-semibold ${text}`}>⏸ {t("notRunning")}</p>;
   const kind = STATUS_KIND[status];
+  const panelStyle = delayed ? DELAYED_ROW_STYLE : STATUS_ROW_STYLE[kind];
+  const textClass = delayed ? "text-danger" : STATUS_TEXT_CLASS[kind];
   return (
-    <div className={`rounded-lg border-2 p-3 ${KIND_STYLE[kind]}`}>
-      <p className={`font-bold ${text}`}>
+    <div className={`rounded-lg border-2 p-3 ${panelStyle}`}>
+      <p className={`font-bold ${text} ${textClass}`}>
         <span aria-hidden="true">{STATUS_ICON[kind]} </span>
         {ts(status)}
       </p>
-      {delayed && <p className="font-bold text-warn">⚠ {tt("delayed")}</p>}
+      {delayed && <p className="font-bold text-danger">⚠ {tt("delayed")}</p>}
       {since && (
         <p className="text-ink">{t("statusSince", { time: format.dateTime(since, { timeStyle: "short" }), ago: format.relativeTime(since, now) })}</p>
       )}

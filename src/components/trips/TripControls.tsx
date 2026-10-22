@@ -163,7 +163,7 @@ export function TripControls({ tripId, initialStatus, initialVersion, initialCha
           onClick={toggleDelayed}
           disabled={pending}
           className={`min-h-14 self-start rounded-lg border-2 px-5 text-lg font-semibold disabled:opacity-60 ${
-            delayed ? "border-warn bg-amber-50 text-warn" : "border-line bg-surface text-ink"
+            delayed ? "border-danger bg-red-50 text-danger" : "border-line bg-surface text-ink"
           }`}
         >
           ⚠ {delayed ? t("clearDelayed") : t("markDelayed")}

@@ -13,10 +13,19 @@ export default async function LoginPage({ params }: PageProps<"/[locale]/login">
 
   const [t, events] = await Promise.all([getTranslations("auth"), loginEvents()]);
   return (
-    <section className="flex flex-col gap-4 max-w-md">
-      <h1 className="text-3xl font-bold">{t("title")}</h1>
-      <p className="text-lg">{t("intro")}</p>
-      <LoginForm events={events} />
-    </section>
+    <>
+      {/* Full-viewport background photo; the `login-bg` class also tells globals.css
+          to make the shared body background transparent, just on this page. */}
+      <div
+        className="login-bg fixed inset-0 -z-10 bg-cover bg-center"
+        style={{ backgroundImage: "url(/images/login-bg.webp)" }}
+        aria-hidden="true"
+      />
+      <section className="flex flex-col gap-4 max-w-md rounded-2xl border border-white/40 bg-white/80 p-6 shadow-xl backdrop-blur-sm">
+        <h1 className="text-3xl font-bold">{t("title")}</h1>
+        <p className="text-lg">{t("intro")}</p>
+        <LoginForm events={events} />
+      </section>
+    </>
   );
 }
