@@ -22,7 +22,7 @@ describe.skipIf(!hasTestDb)("owner bootstrap script", () => {
 
   it("creates the first owner and refuses a second without --allow-additional", async () => {
     expect(run("--phone", "98765 11111", "--name", "First Owner").code).toBe(0);
-    const owner = await prisma.user.findUniqueOrThrow({ where: { phone: "+919876511111" } });
+    const owner = await prisma.user.findFirstOrThrow({ where: { phone: "+919876511111" } });
     expect(owner.role).toBe("OWNER");
     expect(await prisma.auditLog.count({ where: { action: "owner.bootstrap", entityId: owner.id } })).toBe(1);
 

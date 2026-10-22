@@ -10,6 +10,8 @@ export async function loginResponse(result: LoginResult) {
     case "ok":
       (await cookies()).set(SESSION_COOKIE, result.token, sessionCookieOptions);
       return ok({ redirectTo: roleHome(result.role), locale: result.locale });
+    case "choose_guest":
+      return ok({ chooseGuest: true as const, guests: result.guests });
     case "invalid":
       return fail("invalid_credentials", 400);
     case "no_event_access":

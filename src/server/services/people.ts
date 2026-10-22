@@ -160,6 +160,25 @@ export async function exportAttendees(actor: Actor) {
 }
 
 /**
+ * Other guests registered with the same phone number, in the same event (e.g.
+ * a family travelling together) — so a signed-in guest can see who else is
+ * linked to their number, per the brief. Deliberately minimal: name and hotel
+ * only, never medical needs, address, or any other guest's phone number, and
+ * scoped strictly to the current event so a shared number never surfaces an
+ * unrelated registration from another event.
+ */
+export async function getLinkedGuests(actor: Actor, phone: string) {
+  if (actor.role !== "CUSTOMER") throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.user.findMany({
+    where: { phone, role: "CUSTOMER", status: "ACTIVE", id: { not: actor.id }, memberships: { some: { eventId } } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } } },
+  });
+  return rows.map(({ memberships, ...r }) => ({ ...r, hotel: memberships[0]?.hotel ?? null }));
+}
+
+/**
  * Coordinator's attendee list: active attendees of the hotels the coordinator
  * is responsible for in the current event. Filtering is done in the database.
  */
@@ -271,17 +290,26 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
 
   return prisma.$transaction(async (tx) => {
     if (hotelId) await requireActiveHotel(tx, hotelId, eventId);
-    const existing = await tx.user.findUnique({
+    // A phone number is no longer a unique identity on its own: for CUSTOMER
+    // accounts, several different guests (e.g. a family) may share one. The
+    // real identity check is phone + name together, not phone alone. Staff
+    // and coordinator roles keep the old, stricter rule (phone alone is the
+    // identity) — their PIN sign-in has no "choose who you are" step.
+    const candidates = await tx.user.findMany({
       where: { phone: input.phone },
-      select: { id: true, role: true, memberships: { where: { eventId }, select: { id: true } } },
+      select: { id: true, name: true, role: true, memberships: { where: { eventId }, select: { id: true } } },
     });
-    if (existing) {
+    const sameIdentity = candidates.find(
+      (c) => c.role === input.role && (input.role !== "CUSTOMER" || c.name.trim().toLowerCase() === input.name.trim().toLowerCase()),
+    );
+    if (sameIdentity) {
       // Same person joining another event: add a membership, keep their account.
-      if (!member || existing.role !== input.role || existing.memberships.length > 0) throw conflict("duplicatePhone");
-      await tx.eventMember.create({ data: { eventId, userId: existing.id, hotelId } });
-      await audit(tx, actor, "person.addToEvent", "User", existing.id, { eventId, hotelId });
-      return { id: existing.id, addedExisting: true };
+      if (!member || sameIdentity.memberships.length > 0) throw conflict("duplicatePhone");
+      await tx.eventMember.create({ data: { eventId, userId: sameIdentity.id, hotelId } });
+      await audit(tx, actor, "person.addToEvent", "User", sameIdentity.id, { eventId, hotelId });
+      return { id: sameIdentity.id, addedExisting: true };
     }
+    if (input.role !== "CUSTOMER" && candidates.length > 0) throw conflict("duplicatePhone");
     const user = await tx.user.create({
       data: {
         name: input.name,
@@ -305,8 +333,15 @@ export async function updatePerson(actor: Actor, id: string, input: PersonUpdate
     return await prisma.$transaction(async (tx) => {
       const target = await findInEvent(tx, id, eventOf(actor));
       if (!can(actor, "person.update") || !canEditPerson(actor, target)) throw forbidden();
-      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null, gender: input.gender ?? null } });
       const phoneChanged = target.phone !== input.phone;
+      // Phone is no longer unique in the database (CUSTOMER accounts may
+      // share one), so a staff/coordinator phone change needs its own check:
+      // their role still keeps phone as a one-identity key at the app level.
+      if (phoneChanged && target.role !== "CUSTOMER") {
+        const clash = await tx.user.findFirst({ where: { phone: input.phone, id: { not: id } }, select: { id: true } });
+        if (clash) throw conflict("duplicatePhone");
+      }
+      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null, gender: input.gender ?? null } });
       if (phoneChanged) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
       await audit(tx, actor, "person.update", "User", id, { phoneChanged });
     });

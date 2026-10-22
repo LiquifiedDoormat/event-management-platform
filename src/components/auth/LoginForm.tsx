@@ -23,6 +23,9 @@ async function post<T>(url: string, body: unknown): Promise<{ ok: true; data: T 
 }
 
 type Session = { redirectTo: string; locale: "en" | "hi" };
+type Guest = { id: string; name: string };
+/** A phone number can belong to more than one guest (e.g. family travelling together). */
+type AttendeeResult = Session | { chooseGuest: true; guests: Guest[] };
 
 const inputClass = "w-full min-h-14 rounded-lg border-2 border-line bg-surface px-4 text-xl tracking-wide focus:border-brand outline-none";
 const primary = "w-full min-h-14 rounded-lg bg-brand text-brand-ink text-lg font-semibold disabled:opacity-60";
@@ -74,6 +77,7 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
   const [pinConfirm, setPinConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorKey | null>(null);
+  const [guests, setGuests] = useState<Guest[] | null>(null);
 
   function finish(result: { ok: true; data: Session } | { ok: false; error: ErrorKey }) {
     if (!result.ok) {
@@ -85,6 +89,18 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
     router.refresh();
   }
 
+  async function signInAsGuest(userId: string) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const result = await post<AttendeeResult>("/api/auth/attendee", { eventId: eventId || null, phone, userId });
+    if (!result.ok) {
+      setBusy(false);
+      return setError(result.error);
+    }
+    finish({ ok: true, data: result.data as Session });
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -93,7 +109,19 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
     setError(null);
     const event = eventId || null;
 
-    if (tab === "attendee") return finish(await post<Session>("/api/auth/attendee", { eventId: event, phone }));
+    if (tab === "attendee") {
+      const result = await post<AttendeeResult>("/api/auth/attendee", { eventId: event, phone });
+      if (!result.ok) {
+        setBusy(false);
+        return setError(result.error);
+      }
+      if ("chooseGuest" in result.data) {
+        setBusy(false);
+        setGuests(result.data.guests);
+        return;
+      }
+      return finish({ ok: true, data: result.data });
+    }
     if (step === "phone") {
       const status = await post<{ next: "enter_pin" | "needs_pin" }>("/api/auth/pin-status", { phone });
       setBusy(false);
@@ -110,6 +138,7 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
     setError(null);
     setPin("");
     setPinConfirm("");
+    setGuests(null);
   }
 
   const tabButton = (value: Tab, label: string) => (
@@ -144,7 +173,16 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
               {t("noEvents")}
             </p>
           ) : (
-            <select id={id} value={eventId} onChange={(e) => setEventId(e.target.value)} className={inputClass} required>
+            <select
+              id={id}
+              value={eventId}
+              onChange={(e) => {
+                setEventId(e.target.value);
+                setGuests(null);
+              }}
+              className={inputClass}
+              required
+            >
               {events.map((ev) => (
                 <option key={ev.id} value={ev.id}>
                   {ev.name}
@@ -174,13 +212,33 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
             inputMode="tel"
             autoComplete="tel"
             required
-            readOnly={staffPhoneLocked}
+            readOnly={staffPhoneLocked || guests !== null}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className={`${inputClass} ${staffPhoneLocked ? "bg-gray-50" : ""}`}
+            className={`${inputClass} ${staffPhoneLocked || guests !== null ? "bg-gray-50" : ""}`}
           />
         )}
       </Field>
+
+      {tab === "attendee" && guests && (
+        <div className="flex flex-col gap-3" role="group" aria-label={t("chooseGuestTitle")}>
+          <p className="text-lg font-semibold">{t("chooseGuestTitle")}</p>
+          {guests.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              disabled={busy}
+              onClick={() => signInAsGuest(g.id)}
+              className="min-h-14 rounded-lg border-2 border-line bg-surface px-4 text-left text-xl font-semibold disabled:opacity-60"
+            >
+              {g.name}
+            </button>
+          ))}
+          <button type="button" className={linkButton} onClick={() => setGuests(null)}>
+            {t("changeNumber")}
+          </button>
+        </div>
+      )}
 
       {tab === "staff" && step === "pin" && (
         <Field label={t("pinLabel")}>{(id) => <PinInput id={id} value={pin} onChange={setPin} autoComplete="current-password" />}</Field>
@@ -198,9 +256,11 @@ export function LoginForm({ events }: { events: { id: string; name: string }[] }
         </>
       )}
 
-      <button type="submit" disabled={!canSubmit} className={primary}>
-        {submitLabel}
-      </button>
+      {!(tab === "attendee" && guests) && (
+        <button type="submit" disabled={!canSubmit} className={primary}>
+          {submitLabel}
+        </button>
+      )}
 
       {staffPhoneLocked && (
         <button type="button" className={linkButton} onClick={() => reset()}>

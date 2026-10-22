@@ -3,6 +3,7 @@ import { Link } from "@/i18n/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/current-user";
 import { getCustomerHome, toSnapshot } from "@/server/services/transport";
+import { getLinkedGuests } from "@/server/services/people";
 import { LocationMap } from "@/components/maps/LocationMap";
 import { MapsLink, Section } from "@/components/ui/Layout";
 import { LiveBusSummary } from "@/components/transport/LiveBus";
@@ -12,13 +13,14 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
   const { locale } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale, ["CUSTOMER"]);
-  const [t, tp, tt, tm, { settings, hotel }, self] = await Promise.all([
+  const [t, tp, tt, tm, { settings, hotel }, self, linkedGuests] = await Promise.all([
     getTranslations("dashboard"),
     getTranslations("profile"),
     getTranslations("transport"),
     getTranslations("maps"),
     getCustomerHome(user),
     prisma.user.findUnique({ where: { id: user.id }, select: { gender: true } }),
+    getLinkedGuests(user, user.phone),
   ]);
 
   return (
@@ -97,6 +99,20 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
             )}
           </Section>
         </>
+      )}
+
+      {linkedGuests.length > 0 && (
+        <Section title={t("linkedGuests")}>
+          <p className="text-muted">{t("linkedGuestsHint")}</p>
+          <ul className="flex flex-col gap-2">
+            {linkedGuests.map((g) => (
+              <li key={g.id} className="rounded-lg border border-line p-3">
+                <p className="text-lg font-semibold">{g.name}</p>
+                {g.hotel && <p className="text-muted">🏨 {g.hotel.name}</p>}
+              </li>
+            ))}
+          </ul>
+        </Section>
       )}
     </section>
   );

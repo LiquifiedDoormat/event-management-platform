@@ -61,8 +61,13 @@ enum AttendanceMark {
 /// Every person with an account: owner, admins, coordinators, attendees.
 model User {
   id              String        @id @default(cuid())
-  /// E.164 format, e.g. +919876543210. Login identifier only.
-  phone           String        @unique
+  /// E.164 format, e.g. +919876543210. Login identifier — but NOT unique: an
+  /// attendee phone may be shared by several guests (e.g. a family travelling
+  /// together), each their own row. Staff/coordinator accounts are still kept
+  /// effectively one-per-phone at the application level (see createPerson) —
+  /// their sign-in has no "choose which guest" step and wouldn't make sense
+  /// shared. See PROJECT_MEMORY.md's Phase 3 entry.
+  phone           String
   name            String
   role            Role          @default(CUSTOMER)
   status          AccountStatus @default(ACTIVE)
@@ -100,6 +105,7 @@ model User {
   sessions         Session[]
   auditLogs        AuditLog[]
 
+  @@index([phone])
   @@index([role, status])
   @@index([name])
 }

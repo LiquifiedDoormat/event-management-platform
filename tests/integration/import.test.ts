@@ -191,13 +191,25 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
       expect(membership?.hotelId).toBe(hotelA.id);
     });
 
-    it("treats the same phone already a member of this event as a duplicate", async () => {
+    it("treats the same phone AND name, already a member of this event, as a duplicate", async () => {
       const eventId = await defaultEvent();
       const admin = await staff("ADMIN", eventId);
       const existing = await createUser("CUSTOMER", { eventId });
-      const data = sheet(["name", "phone"], [["Someone Else", existing.phone.replace("+91", "")]]);
+      const data = sheet(["name", "phone"], [[existing.name, existing.phone.replace("+91", "")]]);
       const result = await commitImport(admin, "attendees", data);
       expect(result).toMatchObject({ created: 0, skippedDuplicate: 1 });
+    });
+
+    it("creates a new guest for a shared phone with a different name, rather than skipping it as a duplicate", async () => {
+      const eventId = await defaultEvent();
+      const admin = await staff("ADMIN", eventId);
+      const existing = await createUser("CUSTOMER", { eventId });
+      const data = sheet(["name", "phone"], [["A Different Guest", existing.phone.replace("+91", "")]]);
+      const result = await commitImport(admin, "attendees", data);
+      expect(result).toMatchObject({ created: 1, skippedDuplicate: 0 });
+      const rows = await prisma.user.findMany({ where: { phone: existing.phone }, select: { id: true, name: true } });
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.name).sort()).toEqual([existing.name, "A Different Guest"].sort());
     });
 
     it("lets the same phone join a second event without being a duplicate", async () => {
@@ -212,24 +224,31 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
       void adminA;
     });
 
-    it("reports a role mismatch as a failed row, not a silent skip", async () => {
+    it("reports a role mismatch importing a coordinator against a phone an existing guest already uses", async () => {
+      // Coordinator identity is still phone-alone (no "choose who you are" at
+      // PIN sign-in), so a phone already used by any guest blocks a
+      // coordinator import — unlike the reverse (see the test above), which
+      // is intentionally allowed since guests may share a phone.
       const eventId = await defaultEvent();
-      const admin = await staff("ADMIN", eventId);
-      const existingCoordinator = await createUser("COORDINATOR", { eventId });
-      const data = sheet(["name", "phone"], [[existingCoordinator.name, existingCoordinator.phone.replace("+91", "")]]);
-      const preview = await previewImport(admin, "attendees", data);
+      const owner = await staff("OWNER", eventId);
+      const existingGuest = await createUser("CUSTOMER", { eventId });
+      const data = sheet(["name", "phone"], [["New Coordinator", existingGuest.phone.replace("+91", "")]]);
+      const preview = await previewImport(owner, "coordinators", data);
       expect(preview.rows[0]).toMatchObject({ status: "invalid", issues: [{ field: "phone", key: "roleMismatch" }] });
     });
 
-    it("flags duplicate phone numbers within the uploaded file", async () => {
+    it("flags the exact same name and phone repeated within the uploaded file, but allows different guests sharing one phone", async () => {
       const admin = await staff("ADMIN");
       const data = sheet(["name", "phone"], [
+        ["First", "9876500001"],
         ["First", "9876500001"],
         ["Second", "9876500001"],
       ]);
       const preview = await previewImport(admin, "attendees", data);
       expect(preview.rows[0].status).toBe("valid");
       expect(preview.rows[1]).toMatchObject({ status: "duplicate", key: "duplicatePhoneInFile" });
+      // A different name on the same phone is a different guest, not a duplicate.
+      expect(preview.rows[2].status).toBe("valid");
     });
   });
 

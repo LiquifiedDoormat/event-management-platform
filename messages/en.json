@@ -47,7 +47,8 @@
     },
     "continue": "Continue",
     "choosePinIntro": "Welcome! Choose a 6-digit PIN for this account. You'll use it every time you sign in.",
-    "changeNumber": "Use a different number"
+    "changeNumber": "Use a different number",
+    "chooseGuestTitle": "More than one guest uses this number. Who are you?"
   },
   "dashboard": {
     "welcome": "Welcome, {name}",
@@ -70,6 +71,8 @@
     "noHotel": "You have not been given a hotel yet. Please contact the event help desk.",
     "noCoordinator": "A coordinator has not been assigned yet.",
     "noBuses": "No buses are assigned yet.",
+    "linkedGuests": "Other guests at this number",
+    "linkedGuestsHint": "Other people registered with your mobile number for this event.",
     "designatedHotel": "Designated hotel",
     "assignedBuses": "Buses you accompany",
     "ownerTools": "Owner tools",

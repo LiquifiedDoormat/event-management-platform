@@ -73,7 +73,10 @@ describe.skipIf(!hasTestDb)("event isolation", () => {
   it("a person can be registered for two events with a different hotel in each", async () => {
     const { e1, e2, one, two } = await twoEvents();
     const admin2 = await staff("ADMIN", e2);
-    const again = await people.createPerson(admin2, personCreateInput.parse({ name: "x", phone: one.guestA.phone, role: "CUSTOMER", hotelId: two.hotelA.id }));
+    const again = await people.createPerson(
+      admin2,
+      personCreateInput.parse({ name: one.guestA.name, phone: one.guestA.phone, role: "CUSTOMER", hotelId: two.hotelA.id }),
+    );
     expect(again).toEqual({ id: one.guestA.id, addedExisting: true });
     const memberships = await prisma.eventMember.findMany({ where: { userId: one.guestA.id }, orderBy: { eventId: "asc" } });
     expect(Object.fromEntries(memberships.map((m) => [m.eventId, m.hotelId]))).toEqual({ [e1]: one.hotelA.id, [e2]: two.hotelA.id });

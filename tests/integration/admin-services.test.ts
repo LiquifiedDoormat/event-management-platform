@@ -6,7 +6,7 @@ import { AppError } from "@/server/errors";
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
-import { createTwoHotels, createUser, hasTestDb, resetDb, staff } from "./helpers";
+import { createEvent, createTwoHotels, createUser, hasTestDb, resetDb, staff } from "./helpers";
 
 async function expectError(promise: Promise<unknown>, code: AppError["code"], reason?: string) {
   const err = await promise.then(
@@ -170,8 +170,14 @@ describe.skipIf(!hasTestDb)("people service", () => {
       people.createPerson(admin, personCreateInput.parse({ name: "X", phone: "98111 33333", role: "ADMIN" })),
       "forbidden",
     );
+    // A different guest with the same number (e.g. a family member) is a new
+    // person, not a duplicate -- identity is phone + name together now, not
+    // phone alone.
+    const sibling = await people.createPerson(admin, personCreateInput.parse({ name: "Sibling Guest", phone: "98111 22222", role: "CUSTOMER" }));
+    expect(sibling.id).not.toBe(id);
+    // The exact same name AND phone, still registering for this event, is the duplicate case.
     await expectError(
-      people.createPerson(admin, personCreateInput.parse({ name: "Dup", phone: "98111 22222", role: "CUSTOMER" })),
+      people.createPerson(admin, personCreateInput.parse({ name: "New Guest", phone: "98111 22222", role: "CUSTOMER" })),
       "conflict",
       "duplicatePhone",
     );
@@ -188,6 +194,24 @@ describe.skipIf(!hasTestDb)("people service", () => {
     expect((await people.getPerson(admin, id)).address).toBe("221B Baker St");
     expect((await people.getPerson(guest, id)).address).toBe("221B Baker St");
     expect((await people.getPerson(coordA, id)).address).toBeUndefined();
+  });
+
+  it("shows a guest the other guests sharing their phone number, scoped to the current event, never other details", async () => {
+    const { eventId, hotelA, hotelB, guestA } = await createTwoHotels();
+    const sibling = await createUser("CUSTOMER", { eventId, hotelId: hotelB.id });
+    await prisma.user.update({ where: { id: sibling.id }, data: { phone: guestA.phone } });
+    // Same phone, but a different event entirely -- must never show up.
+    const otherEvent = (await createEvent("Other")).id;
+    const unrelated = await createUser("CUSTOMER", { eventId: otherEvent });
+    await prisma.user.update({ where: { id: unrelated.id }, data: { phone: guestA.phone } });
+
+    const linked = await people.getLinkedGuests(guestA, guestA.phone);
+    expect(linked).toHaveLength(1);
+    expect(linked[0]).toMatchObject({ id: sibling.id, name: sibling.name, hotel: { id: hotelB.id } });
+    expect(linked.some((g) => g.id === unrelated.id)).toBe(false);
+    expect(linked.some((g) => g.id === guestA.id)).toBe(false);
+
+    await expectError(people.getLinkedGuests(await staff("ADMIN"), guestA.phone), "forbidden");
   });
 
   it("stores and updates a guest's gender", async () => {

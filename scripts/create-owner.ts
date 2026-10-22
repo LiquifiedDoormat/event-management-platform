@@ -74,7 +74,7 @@ async function main() {
       fail(`an active Owner already exists (${owners}). Re-run with --allow-additional to add another.`);
     }
 
-    const existing = await tx.user.findUnique({ where: { phone: phone! }, select: { id: true, role: true } });
+    const existing = await tx.user.findFirst({ where: { phone: phone! }, select: { id: true, role: true } });
     let userId: string;
     if (existing) {
       if (!values["promote-existing"]) {
