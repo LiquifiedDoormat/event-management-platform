@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
 import { AppError } from "@/server/errors";
-import { getCustomerHome, getTrackedBus } from "@/server/services/transport";
+import { getCustomerHome, getLiveBus, getTrackedBus } from "@/server/services/transport";
 import { createTwoHotels, createUser, hasTestDb, moveAttendee, resetDb, staff } from "./helpers";
 
 async function denied(p: Promise<unknown>) {
@@ -71,5 +71,15 @@ describe.skipIf(!hasTestDb)("attendee transport views", () => {
     await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "BOARDING_AT_VENUE" } });
     const home = await getCustomerHome(asSession(guestA));
     expect(home.hotel?.buses[0].trips[0].status).toBe("BOARDING_AT_VENUE");
+  });
+
+  it("getLiveBus's short-lived snapshot cache still enforces per-viewer permissions", async () => {
+    // Many attendees polling the same bus share one cached DB row (added for load
+    // under concurrent viewing), but the authorization check must still run fresh
+    // for every caller — an unrelated hotel's guest polling right behind an
+    // authorized one must not be let in just because the row is already cached.
+    const { guestA, guestB, busA } = await createTwoHotels();
+    expect((await getLiveBus(guestA, busA.id)).busId).toBe(busA.id);
+    await denied(getLiveBus(guestB, busA.id));
   });
 });
