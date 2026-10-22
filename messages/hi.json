@@ -299,6 +299,7 @@
     "phoneHint": "10 अंकों का भारतीय मोबाइल नंबर।",
     "address": "डाक पता",
     "exportAttendees": "प्रतिभागी निर्यात करें (CSV)",
+    "exportAttendeesXlsx": "प्रतिभागी निर्यात करें (Excel)",
     "phoneChangeHint": "नंबर बदलने पर यह व्यक्ति सभी डिवाइस से साइन आउट हो जाएगा।",
     "designatedHotel": "निर्धारित होटल",
     "designatedBuses": "जिन बसों के साथ जाते हैं",

@@ -89,4 +89,6 @@ No SMS, OTP, realtime or map **provider** fees: sign-in, live updates and maps-a
 | Custom domain | — | Registrar fee if you want your own domain (optional). |
 | Google Maps embed | — | Needs a billing account; free monthly credit then pay-as-you-go. Off by default. |
 
+**Staff pages** (`/ops` fleet board, coordinator boarding lists, attendance check-in) add negligible load on top of the attendee-tracking estimate below: a handful of staff/coordinator devices, not thousands, each polling or refreshing every 20s at most. The `/ops` query is a single unpaginated read over all buses (~150), fine at that scale; re-check if the fleet grows an order of magnitude.
+
 **Load estimate (worst case, event day):** 2,000 attendees with the page open poll every 20 s → ~100 requests/s (~6,000/min, ~360,000/hour), each a small database read; plus ~20 buses × 1 GPS write/6 s. Pages only poll while visible and slow to 60 s when no trip is running, so real traffic is usually far lower — but at the upper end this likely **exceeds free-tier limits** on Vercel and Neon. Options if needed: longer poll interval for attendees (e.g. 30–60 s), a paid plan for event days, or a self-hosted server/database. Measure with the k6 script (OPERATIONS.md) on staging before the event. Free-tier limits and terms change; check the providers' current pricing pages.

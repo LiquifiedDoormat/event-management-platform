@@ -299,6 +299,7 @@
     "phoneHint": "10-digit Indian mobile number.",
     "address": "Postal address",
     "exportAttendees": "Export attendees (CSV)",
+    "exportAttendeesXlsx": "Export attendees (Excel)",
     "phoneChangeHint": "Changing the number signs this person out on all devices.",
     "designatedHotel": "Designated hotel",
     "designatedBuses": "Buses accompanied",

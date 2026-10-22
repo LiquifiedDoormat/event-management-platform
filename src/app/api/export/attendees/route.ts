@@ -1,18 +1,35 @@
+import type { NextRequest } from "next/server";
+import ExcelJS from "exceljs";
 import { getApiUser } from "@/lib/auth/current-user";
 import { exportAttendees } from "@/server/services/people";
 import { toCsv } from "@/lib/csv";
 
-/** Attendee export (name, phone, hotel, zone, postal address) as CSV. Staff only — the address column is PII. */
-export async function GET() {
+const HEADERS = ["name", "phone", "hotel", "zone", "address"];
+
+/** Attendee export (name, phone, hotel, zone, postal address) as CSV or XLSX (?format=xlsx). Staff only — the address column is PII. */
+export async function GET(req: NextRequest) {
   const user = await getApiUser();
   if (!user || (user.role !== "OWNER" && user.role !== "ADMIN")) return new Response("Not found", { status: 404 });
 
   const rows = await exportAttendees(user);
-  const csv = toCsv([
-    ["name", "phone", "hotel", "zone", "address"],
-    ...rows.map((r) => [r.name, r.phone, r.hotel, r.zone, r.address]),
-  ]);
+  const format = req.nextUrl.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
+  if (format === "xlsx") {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Attendees");
+    sheet.addRow(HEADERS);
+    for (const r of rows) sheet.addRow([r.name, r.phone, r.hotel, r.zone, r.address]);
+    const buffer = await workbook.xlsx.writeBuffer();
+    return new Response(buffer, {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="attendees.xlsx"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const csv = toCsv([HEADERS, ...rows.map((r) => [r.name, r.phone, r.hotel, r.zone, r.address])]);
   return new Response(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

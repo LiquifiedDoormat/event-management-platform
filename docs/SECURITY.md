@@ -58,6 +58,13 @@ Hotel Coordinator and Cluster Coordinator below are both stored as `Role` values
 | Send GPS location | — | — | — | own active trip only | — |
 | View hotel details, its coordinators (name + phone), its buses | ✅ | ✅ | every hotel in own cluster | own hotel only | own hotel only |
 | View a person's details | everyone | everyone | self + attendees/hotel-coordinators of own cluster's hotels | self + attendees of own hotel | self only |
+| View a person's **postal address** (PII, narrower than the row above) | ✅ | ✅ | — | — | self only |
+| Create/manage zones and gates; bulk/individual attendee zone assignment | ✅ | ✅ | — | — | — |
+| View/edit own zone assignment | — | — | — | — | view only |
+| Record venue check-in/check-out | ✅ | ✅ | — | — | — |
+| Record bus boarding/departure (attendance) | ✅ (any bus) | ✅ (any bus) | — | own designated bus(es) only | — |
+| View airport-style ops board (`/ops`, all buses) | ✅ | ✅ | — | — | — |
+| View CSV export of attendees (incl. address) | ✅ | ✅ | — | — | — |
 
 Nothing is hard-deleted through the app except bus stops (route configuration); everything else is deactivated to preserve history. Guard rails: a hotel with active buses/attendees can't be deactivated; a bus or coordinator on an active trip can't be deactivated or (coordinator) have their role changed; nobody can deactivate or change their own role; changing a person's phone number or deactivating them revokes all their sessions. Leaving the Hotel Coordinator, Cluster Coordinator or Customer role clears the person's `EventMember.hotelId`/`clusterId` (all events); leaving Hotel Coordinator also clears their bus designations.
 
@@ -99,7 +106,13 @@ Set in `next.config.ts`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Ref
 - GPS history is sampled and deleted after `EventConfig.locationRetentionDays` (default 7). Only the latest position is kept per bus.
 - Rate-limit keys are SHA-256 hashes, not raw phone numbers or IPs.
 
+## Attendance (append-only)
+
+`AttendanceEvent` rows are never updated or deleted; a correction is a new row, and "current" status is derived from the latest row of each kind. `recordBoarding` rejects boarding an attendee onto a bus outside their own hotel (`attendeeWrongHotel`), enforced for every actor including staff. Concurrent taps (two devices marking the same attendee boarded) are safe by construction: each creates its own row, duplicates are harmless (same derived status), no unique constraint needed.
+
 ## Pending
 
 - Cleanup job for expired sessions and rate-limit buckets (Phase 7 operations).
 - PIN sign-in verified locally (tests + API); not yet on a deployment.
+- `main` is missing all of `feat/bulk-import-and-live-map`'s content (merge-ordering bug — see `PROJECT_MEMORY.md` §6); nothing below PR #9 has been security-reviewed on a live deployment.
+- CSP not yet verified with a live Google Maps key on a real deployment.
