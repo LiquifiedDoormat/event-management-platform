@@ -58,11 +58,64 @@ describe.skipIf(!hasTestDb)("zone service", () => {
     const { eventId, hotelA, guestA } = await createTwoHotels();
     const guestA2 = await createUser("CUSTOMER", { hotelId: hotelA.id, eventId });
     const zone = await zones.createZone(admin, zoneInput.parse({ name: "A" }));
-    const { count } = await zones.bulkAssignZone(admin, { zoneId: zone.id, hotelId: hotelA.id });
+    const { count } = await zones.bulkAssignZone(admin, { zoneId: zone.id, hotelId: hotelA.id, mode: "add" });
     expect(count).toBe(2);
     for (const userId of [guestA.id, guestA2.id]) {
       expect((await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId } } }))?.zoneId).toBe(zone.id);
     }
+  });
+
+  it("refuses a single assignment that would exceed the zone's capacity, but allows re-assigning someone already in it", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA } = await createTwoHotels();
+    const g1 = await createUser("CUSTOMER", { hotelId: hotelA.id, eventId });
+    const g2 = await createUser("CUSTOMER", { hotelId: hotelA.id, eventId });
+    const zone = await zones.createZone(admin, zoneInput.parse({ name: "Tiny", capacity: "1" }));
+    await zones.setPersonZone(admin, g1.id, zone.id);
+    await expectError(zones.setPersonZone(admin, g2.id, zone.id), "conflict", "zoneFull");
+    // Re-assigning the same person to the zone they're already in is a no-op, not a capacity error.
+    await zones.setPersonZone(admin, g1.id, zone.id);
+    expect((await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: g1.id } } }))?.zoneId).toBe(zone.id);
+  });
+
+  it("bulk-assign (add) only fills remaining capacity and reports how many didn't fit", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA } = await createTwoHotels();
+    // createTwoHotels already registers one guest at hotelA; add two more for 3 eligible total.
+    const guests = await Promise.all(Array.from({ length: 2 }, () => createUser("CUSTOMER", { hotelId: hotelA.id, eventId })));
+    const zone = await zones.createZone(admin, zoneInput.parse({ name: "Small", capacity: "2" }));
+    const result = await zones.bulkAssignZone(admin, { zoneId: zone.id, hotelId: hotelA.id, mode: "add" });
+    expect(result).toMatchObject({ count: 2, skipped: 1 });
+    const assigned = await prisma.eventMember.count({ where: { eventId, zoneId: zone.id } });
+    expect(assigned).toBe(2);
+    void guests;
+  });
+
+  it("bulk-assign (replace) clears the zone's current occupants before refilling it, and requires the caller to have confirmed", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA, hotelB, guestA } = await createTwoHotels();
+    const zone = await zones.createZone(admin, zoneInput.parse({ name: "Shared" }));
+    // Someone from a different hotel is already in the zone.
+    const guestB = await createUser("CUSTOMER", { hotelId: hotelB.id, eventId });
+    await zones.setPersonZone(admin, guestB.id, zone.id);
+
+    const result = await zones.bulkAssignZone(admin, { zoneId: zone.id, hotelId: hotelA.id, mode: "replace" });
+    expect(result.replaced).toBe(1);
+    expect(result.count).toBe(1); // only hotelA's guestA
+    expect((await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: guestB.id } } }))?.zoneId).toBeNull();
+    expect((await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: guestA.id } } }))?.zoneId).toBe(zone.id);
+  });
+
+  it("handles concurrent single assignments to a nearly-full zone without exceeding capacity", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA } = await createTwoHotels();
+    const guests = await Promise.all(Array.from({ length: 5 }, () => createUser("CUSTOMER", { hotelId: hotelA.id, eventId })));
+    const zone = await zones.createZone(admin, zoneInput.parse({ name: "Race", capacity: "3" }));
+    const results = await Promise.allSettled(guests.map((g) => zones.setPersonZone(admin, g.id, zone.id)));
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    expect(succeeded).toBe(3);
+    const assigned = await prisma.eventMember.count({ where: { eventId, zoneId: zone.id } });
+    expect(assigned).toBe(3);
   });
 
   it("refuses to deactivate a zone with active attendees still assigned", async () => {

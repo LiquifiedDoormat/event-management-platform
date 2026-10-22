@@ -7,8 +7,9 @@ import { getPerson } from "@/server/services/people";
 import { getCluster } from "@/server/services/clusters";
 import { hotelOptions } from "@/server/services/hotels";
 import { zoneOptions } from "@/server/services/zones";
+import { listRooms } from "@/server/services/rooms";
 import { getAttendanceTrail } from "@/server/services/attendance";
-import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updateMedicalNeedsAction, updatePersonAction } from "@/features/admin/actions";
+import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonRoomAction, setPersonStatusAction, setPersonZoneAction, updateMedicalNeedsAction, updatePersonAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, PageHeader, Section } from "@/components/ui/Layout";
@@ -21,6 +22,7 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   const isSelf = user.id === person.id;
   const canHotel = person.role === "CUSTOMER" && canSetAttendeeHotel(user, person.hotelId);
   const canZone = person.role === "CUSTOMER" && can(user, "zone.manageAssignments");
+  const canRoom = person.role === "CUSTOMER" && Boolean(person.hotelId) && can(user, "room.manageAssignments");
   const canRole = !isSelf && can(user, "person.changeRole") && canEditPerson(user, person);
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
   const canPin = canResetPin(user, person);
@@ -29,21 +31,24 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   // coordinators) under that cluster — same data the Clusters section already
   // shows, reused rather than re-queried from scratch.
   const canSeeClusterReports = person.role === "CLUSTER_COORDINATOR" && Boolean(person.cluster) && can(user, "dashboard.viewAll");
-  const [t, tc, tr, ts, tz, ta, format, hotels, zones, trail, cluster] = await Promise.all([
+  const [t, tc, tr, ts, tz, th, ta, format, hotels, zones, roomList, trail, cluster] = await Promise.all([
     getTranslations("people"),
     getTranslations("common"),
     getTranslations("roles"),
     getTranslations("busStatus"),
     getTranslations("zones"),
+    getTranslations("hotels"),
     getTranslations("attendance"),
     getFormatter(),
     canHotel ? hotelOptions(user) : Promise.resolve([]),
     canZone ? zoneOptions(user) : Promise.resolve([]),
+    canRoom ? listRooms(user, person.hotelId!) : Promise.resolve([]),
     person.role === "CUSTOMER" ? getAttendanceTrail(user, person.id) : Promise.resolve(null),
     canSeeClusterReports ? getCluster(user, person.cluster!.id) : Promise.resolve(null),
   ]);
   const hotelSelect = hotels.map((h) => ({ value: h.id, label: h.name }));
   const zoneSelect = zones.map((z) => ({ value: z.id, label: z.name }));
+  const availableRooms = roomList.filter((r) => r.isActive && (r.id === person.roomId || r.occupied < r.capacity));
 
   return (
     <section className="flex flex-col gap-5">
@@ -175,6 +180,35 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
           <ActionForm action={setPersonZoneAction} hidden={{ id: person.id }} submitLabel={tc("save")} inline>
             <SelectField name="zoneId" label={tz("title")} defaultValue={person.zoneId ?? ""} emptyLabel={tz("unassignedAttendees")} options={zoneSelect} />
           </ActionForm>
+        </Section>
+      )}
+
+      {canRoom && (
+        <Section title={th("rooms")}>
+          {person.room && (
+            <p className="font-semibold">
+              {th("roomLabel")}: {person.room.label}
+            </p>
+          )}
+          {availableRooms.length === 0 ? (
+            <p>{th("noRooms")}</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {availableRooms.map((r) => {
+                const selected = r.id === person.roomId;
+                return (
+                  <li key={r.id}>
+                    <ActionForm
+                      action={setPersonRoomAction}
+                      hidden={{ id: person.id, roomId: selected ? "" : r.id }}
+                      submitLabel={`${r.label} · ${th("occupancy", { occupied: r.occupied, capacity: r.capacity })}`}
+                      tone={selected ? "primary" : "secondary"}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </Section>
       )}
 

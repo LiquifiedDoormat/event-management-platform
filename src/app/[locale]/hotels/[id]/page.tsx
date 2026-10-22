@@ -4,10 +4,18 @@ import { BackLink } from "@/components/ui/BackLink";
 import { can } from "@/server/policies";
 import { getHotel } from "@/server/services/hotels";
 import { coordinatorOptions } from "@/server/services/people";
+import { listRooms } from "@/server/services/rooms";
 import { orNotFound, requireStaff } from "@/lib/utils/page";
-import { addHotelCoordinatorAction, removeHotelCoordinatorAction, setHotelActiveAction, updateHotelAction } from "@/features/admin/actions";
+import {
+  addHotelCoordinatorAction,
+  createRoomAction,
+  removeHotelCoordinatorAction,
+  setHotelActiveAction,
+  setRoomActiveAction,
+  updateHotelAction,
+} from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
-import { SelectField } from "@/components/ui/Fields";
+import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, MapsLink, PageHeader, Section } from "@/components/ui/Layout";
 import { HotelFields } from "@/components/hotels/HotelFields";
 
@@ -17,11 +25,13 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
   const user = await requireStaff(locale);
   const hotel = await orNotFound(getHotel(user, id));
   const canAssign = can(user, "hotel.manageCoordinators");
-  const [t, tc, format, coordinators] = await Promise.all([
+  const canManageRooms = can(user, "room.manage");
+  const [t, tc, format, coordinators, rooms] = await Promise.all([
     getTranslations("hotels"),
     getTranslations("common"),
     getFormatter(),
     canAssign ? coordinatorOptions(user) : Promise.resolve([]),
+    listRooms(user, hotel.id),
   ]);
 
   return (
@@ -110,6 +120,51 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
           <Link href={`/buses/new?hotelId=${hotel.id}`} className="text-brand font-semibold underline">
             ＋ {t("addBus")}
           </Link>
+        )}
+      </Section>
+
+      <Section title={t("rooms")}>
+        <p className="text-muted">{t("roomsHint")}</p>
+        {rooms.length === 0 ? (
+          <p>{t("noRooms")}</p>
+        ) : (
+          // Grid of room "cards" — a simple, original stand-in for a booking-site
+          // seat/room picker (no proprietary layout copied): each card shows the
+          // room and how full it is at a glance, colour-coded the same way the
+          // rest of the app marks full/available/inactive.
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {rooms.map((r) => {
+              const full = r.occupied >= r.capacity;
+              return (
+                <li
+                  key={r.id}
+                  className={`flex flex-col gap-1 rounded-lg border-2 p-3 ${
+                    !r.isActive ? "border-line bg-gray-50 opacity-60" : full ? "border-danger bg-red-50" : "border-ok bg-green-50"
+                  }`}
+                >
+                  <span className="text-lg font-bold">{r.label}</span>
+                  <span className="font-semibold">{t("occupancy", { occupied: r.occupied, capacity: r.capacity })}</span>
+                  {!r.isActive && <Badge tone="danger">{tc("inactive")}</Badge>}
+                  {canManageRooms && (
+                    <ActionForm
+                      action={setRoomActiveAction}
+                      hidden={{ id: r.id, active: String(!r.isActive) }}
+                      submitLabel={r.isActive ? t("deactivateRoom") : t("activateRoom")}
+                      confirmMessage={r.isActive ? t("confirmDeactivateRoom") : undefined}
+                      tone="secondary"
+                      inline
+                    />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {canManageRooms && (
+          <ActionForm action={createRoomAction} hidden={{ hotelId: hotel.id }} submitLabel={t("addRoom")} inline resetOnSuccess>
+            <TextField name="label" label={t("roomLabel")} required maxLength={40} />
+            <TextField name="capacity" type="number" min={1} label={t("roomCapacity")} required />
+          </ActionForm>
         )}
       </Section>
 

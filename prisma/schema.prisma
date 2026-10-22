@@ -204,6 +204,11 @@ model EventMember {
   /// Attendee's assigned seating/venue zone. Unused by other roles.
   zoneId    String?
   zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  /// Attendee's assigned room at their hotel. Unused by other roles. Not
+  /// enforced at the DB level to always match hotelId's hotel — the service
+  /// layer checks that on assignment (see services/rooms.ts).
+  roomId    String?
+  room      Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@unique([eventId, userId])
@@ -211,6 +216,7 @@ model EventMember {
   @@index([hotelId])
   @@index([clusterId])
   @@index([zoneId])
+  @@index([roomId])
 }
 
 model Hotel {
@@ -234,9 +240,33 @@ model Hotel {
   /// coordinators may share a hotel; see services/hotels.ts).
   members EventMember[]
   buses   Bus[]
+  rooms   Room[]
 
   @@index([eventId, isActive, name])
   @@index([clusterId])
+}
+
+/// One room's inventory at a hotel — number of beds/occupancy, for assigning
+/// guests to specific rooms (Phase 4). A room belongs to one hotel; a guest's
+/// room is tracked on their EventMember row, same pattern as zoneId.
+model Room {
+  id        String   @id @default(cuid())
+  hotelId   String
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  /// e.g. "101" or "Room 12" — just a label, not necessarily a number.
+  label     String
+  /// Maximum occupancy (beds). Always required, unlike Zone.capacity, since
+  /// an uncapped room has no real-world meaning.
+  capacity  Int
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  occupants EventMember[]
+
+  @@unique([hotelId, label])
+  @@index([hotelId, isActive])
 }
 
 model Bus {

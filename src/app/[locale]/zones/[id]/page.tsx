@@ -67,7 +67,29 @@ export default async function ZoneDetailPage({ params }: PageProps<"/[locale]/zo
       {canAssign && (
         <Section title={t("bulkAssign")}>
           <p className="text-muted">{t("bulkAssignHint")}</p>
-          <ActionForm action={bulkAssignZoneAction} hidden={{ zoneId: zone.id }} submitLabel={t("assign")} inline resetOnSuccess>
+          <ActionForm
+            action={bulkAssignZoneAction}
+            hidden={{ zoneId: zone.id, mode: "add" }}
+            submitLabel={t("bulkAssignAdd")}
+            inline
+            resetOnSuccess
+          >
+            <SelectField
+              name="hotelId"
+              label={t("chooseHotel")}
+              emptyLabel={t("unassignedAttendees")}
+              options={hotels.map((h) => ({ value: h.id, label: h.name }))}
+            />
+          </ActionForm>
+          <ActionForm
+            action={bulkAssignZoneAction}
+            hidden={{ zoneId: zone.id, mode: "replace" }}
+            submitLabel={t("bulkAssignReplace")}
+            confirmMessage={t("bulkAssignReplaceConfirm")}
+            tone="danger"
+            inline
+            resetOnSuccess
+          >
             <SelectField
               name="hotelId"
               label={t("chooseHotel")}

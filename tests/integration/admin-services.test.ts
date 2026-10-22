@@ -197,7 +197,7 @@ describe.skipIf(!hasTestDb)("people service", () => {
   });
 
   it("shows a guest the other guests sharing their phone number, scoped to the current event, never other details", async () => {
-    const { eventId, hotelA, hotelB, guestA } = await createTwoHotels();
+    const { eventId, hotelB, guestA } = await createTwoHotels();
     const sibling = await createUser("CUSTOMER", { eventId, hotelId: hotelB.id });
     await prisma.user.update({ where: { id: sibling.id }, data: { phone: guestA.phone } });
     // Same phone, but a different event entirely -- must never show up.

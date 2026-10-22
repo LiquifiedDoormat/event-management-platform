@@ -45,6 +45,8 @@ export type Action =
   | "zone.deactivate"
   | "zone.manageGates"
   | "zone.manageAssignments"
+  | "room.manage"
+  | "room.manageAssignments"
   | "attendance.checkInOut"
   | "bus.create"
   | "bus.update"
@@ -85,6 +87,9 @@ const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "zone.deactivate",
   "zone.manageGates",
   "zone.manageAssignments",
+  // Same provisioning rationale as the zone actions just above.
+  "room.manage",
+  "room.manageAssignments",
   // Venue check-in/out is a staff (gate-desk) action; boarding/departure is
   // recorded by the trip's own coordinator — see canRecordBoarding below.
   "attendance.checkInOut",

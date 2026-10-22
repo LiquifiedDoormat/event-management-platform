@@ -11,6 +11,15 @@ export const zoneInput = z.object({
 });
 export type ZoneInput = z.infer<typeof zoneInput>;
 
+export const roomInput = z.object({
+  label: requiredText(40),
+  // Unlike Zone.capacity, a room's capacity is always required -- an uncapped
+  // room has no real-world meaning.
+  capacity: z.coerce.number({ error: "required" }).int().positive(),
+  notes: optionalText(2000),
+});
+export type RoomInput = z.infer<typeof roomInput>;
+
 export const gateInput = z.object({ name: requiredText(120), notes: optionalText(2000), zoneId: optionalId });
 export type GateInput = z.infer<typeof gateInput>;
 
