@@ -1,0 +1,3 @@
+name,address,latitude,longitude,notes
+SAMPLE Hotel One,REPLACE WITH REAL ADDRESS,,,
+SAMPLE Hotel Two,REPLACE WITH REAL ADDRESS,12.9716,77.5946,Near the venue gate
