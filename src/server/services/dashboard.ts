@@ -141,6 +141,11 @@ export async function getOpsDashboard(
     };
   });
 
+  // Boarding → on the way → reached, then alphabetical by name within each group.
+  // Delayed buses stay in their journey-status group rather than getting a section of their own.
+  const KIND_PRIORITY: Record<OpsBusRow["kind"], number> = { boarding: 0, moving: 1, arrived: 2, notRunning: 3 };
+  all.sort((a, b) => KIND_PRIORITY[a.kind] - KIND_PRIORITY[b.kind] || a.label.localeCompare(b.label));
+
   const summary = { boarding: 0, moving: 0, arrived: 0, notRunning: 0, delayed: 0, total: all.length };
   for (const b of all) {
     summary[b.kind]++;
