@@ -7,6 +7,7 @@ import { startTripAction } from "@/features/trips/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField } from "@/components/ui/Fields";
 import { Badge, Section } from "@/components/ui/Layout";
+import { STATUS_BADGE_TONE, STATUS_KIND } from "@/lib/transport/status";
 
 export default async function CoordinatorHome({ params }: PageProps<"/[locale]/coordinator">) {
   const { locale } = await params;
@@ -37,7 +38,8 @@ export default async function CoordinatorHome({ params }: PageProps<"/[locale]/c
         <Section title={tt("activeTrip")}>
           <p className="text-2xl font-bold">🚌 {active.bus.label}</p>
           <p>
-            <Badge tone="ok">{ts(active.status)}</Badge> {active.isDelayed && <Badge tone="warn">⚠ {tt("delayed")}</Badge>}{" "}
+            <Badge tone={STATUS_BADGE_TONE[STATUS_KIND[active.status]]}>{ts(active.status)}</Badge>{" "}
+            {active.isDelayed && <Badge tone="danger">⚠ {tt("delayed")}</Badge>}{" "}
             {active.sharingLocation ? `· 📡 ${tt("sharingOn")}` : `· ⏸ ${tt("sharingOff")}`}
           </p>
           <Link

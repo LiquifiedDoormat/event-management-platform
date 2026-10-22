@@ -4,7 +4,7 @@ import { getOpsDashboard } from "@/server/services/dashboard";
 import { hotelOptions } from "@/server/services/hotels";
 import { clusterOptions } from "@/server/services/clusters";
 import { param, requireStaff } from "@/lib/utils/page";
-import { STATUS_ICON, type StatusKind } from "@/lib/transport/status";
+import { DELAYED_ROW_STYLE, STATUS_BADGE_TONE, STATUS_ICON, STATUS_ROW_STYLE, type StatusKind } from "@/lib/transport/status";
 import { PageHeader, Badge, EmptyState } from "@/components/ui/Layout";
 import { FilterSelect } from "@/components/ui/Directory";
 import { AutoRefresh } from "@/components/ui/AutoRefresh";
@@ -92,25 +92,28 @@ export default async function OpsPage({ params, searchParams }: PageProps<"/[loc
         <EmptyState>{t("noResults")}</EmptyState>
       ) : (
         <ul className="flex flex-col gap-2">
-          {buses.map((b) => (
-            <li key={b.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line p-3">
-              <span className="font-semibold min-w-28">🚌 {b.label}</span>
-              <span className="text-muted">🏨 {b.hotelName}</span>
-              {b.clusterName && <span className="text-muted">🗺️ {b.clusterName}</span>}
-              <span className="text-muted">{b.coordinatorName ?? t("noCoordinator")}</span>
-              <span className="ml-auto flex items-center gap-2">
-                {b.status ? (
-                  <Badge tone="ok">
-                    <span aria-hidden="true">{STATUS_ICON[b.kind as StatusKind]} </span>
-                    {ts(b.status)}
-                  </Badge>
-                ) : (
-                  <Badge>{t("notRunning")}</Badge>
-                )}
-                {b.isDelayed && <Badge tone="warn">⚠ {t("delayed")}</Badge>}
-              </span>
-            </li>
-          ))}
+          {buses.map((b) => {
+            const rowStyle = b.isDelayed ? DELAYED_ROW_STYLE : b.status ? STATUS_ROW_STYLE[b.kind as StatusKind] : "border-line";
+            return (
+              <li key={b.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border-2 p-3 ${rowStyle}`}>
+                <span className="font-semibold min-w-28">🚌 {b.label}</span>
+                <span className="text-muted">🏨 {b.hotelName}</span>
+                {b.clusterName && <span className="text-muted">🗺️ {b.clusterName}</span>}
+                <span className="text-muted">{b.coordinatorName ?? t("noCoordinator")}</span>
+                <span className="ml-auto flex items-center gap-2">
+                  {b.status ? (
+                    <Badge tone={STATUS_BADGE_TONE[b.kind as StatusKind]}>
+                      <span aria-hidden="true">{STATUS_ICON[b.kind as StatusKind]} </span>
+                      {ts(b.status)}
+                    </Badge>
+                  ) : (
+                    <Badge>{t("notRunning")}</Badge>
+                  )}
+                  {b.isDelayed && <Badge tone="danger">⚠ {t("delayed")}</Badge>}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

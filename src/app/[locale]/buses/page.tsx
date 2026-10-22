@@ -5,6 +5,7 @@ import { hotelOptions } from "@/server/services/hotels";
 import { param, requireStaff } from "@/lib/utils/page";
 import { Badge, EmptyState, ListCard, PageHeader } from "@/components/ui/Layout";
 import { FilterSelect, Pagination, SearchForm } from "@/components/ui/Directory";
+import { DELAYED_ROW_STYLE, STATUS_BADGE_TONE, STATUS_KIND, STATUS_ROW_STYLE } from "@/lib/transport/status";
 
 export default async function BusesPage({ params, searchParams }: PageProps<"/[locale]/buses">) {
   const { locale } = await params;
@@ -37,14 +38,15 @@ export default async function BusesPage({ params, searchParams }: PageProps<"/[l
         <ul className="flex flex-col gap-3">
           {page.items.map((b) => {
             const trip = b.trips[0];
+            const rowStyle = trip ? (trip.isDelayed ? DELAYED_ROW_STYLE : STATUS_ROW_STYLE[STATUS_KIND[trip.status]]) : "";
             return (
-              <ListCard key={b.id} href={`/buses/${b.id}`} title={`🚌 ${b.label}`}>
+              <ListCard key={b.id} href={`/buses/${b.id}`} title={`🚌 ${b.label}`} className={rowStyle}>
                 {b.registration && <span className="text-muted">{b.registration}</span>}
                 <span>🏨 {b.hotel.name}</span>
                 <span>{b.coordinator ? t("coordinatorIs", { name: b.coordinator.name }) : t("noCoordinator")}</span>
                 <span>
-                  {trip ? <Badge tone="ok">{ts(trip.status)}</Badge> : <Badge>{t("noTrip")}</Badge>}
-                  {trip?.isDelayed && <Badge tone="warn">⚠ {tt("delayed")}</Badge>}
+                  {trip ? <Badge tone={STATUS_BADGE_TONE[STATUS_KIND[trip.status]]}>{ts(trip.status)}</Badge> : <Badge>{t("noTrip")}</Badge>}
+                  {trip?.isDelayed && <Badge tone="danger">⚠ {tt("delayed")}</Badge>}
                 </span>
                 {!b.isActive && <Badge tone="danger">{td("inactive")}</Badge>}
               </ListCard>

@@ -21,6 +21,7 @@ import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField } from "@/components/ui/Fields";
 import { Badge, DetailList, MapsLink, PageHeader, Section } from "@/components/ui/Layout";
 import { BusFields, StopFields } from "@/components/buses/BusFields";
+import { STATUS_BADGE_TONE, STATUS_KIND } from "@/lib/transport/status";
 
 export default async function BusDetailPage({ params }: PageProps<"/[locale]/buses/[id]">) {
   const { locale, id } = await params;
@@ -70,7 +71,8 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
               t("currentStatus"),
               trip ? (
                 <span key="s">
-                  <Badge tone="ok">{ts(trip.status)}</Badge> {trip.isDelayed && <Badge tone="warn">⚠ {ttrip("delayed")}</Badge>}{" "}
+                  <Badge tone={STATUS_BADGE_TONE[STATUS_KIND[trip.status]]}>{ts(trip.status)}</Badge>{" "}
+                  {trip.isDelayed && <Badge tone="danger">⚠ {ttrip("delayed")}</Badge>}{" "}
                   {t("since", { time: when(trip.statusChangedAt) })} · {trip.coordinator.name}
                 </span>
               ) : (

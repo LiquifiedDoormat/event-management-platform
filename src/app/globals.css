@@ -11,6 +11,8 @@
   --color-ok: #15803d;
   --color-warn: #b45309;
   --color-danger: #b91c1c;
+  /* "Travelling" status only (bus dashboard row/badge colour-coding) — distinct from --color-brand. */
+  --color-info: #1d4ed8;
   --font-sans: var(--font-latin), var(--font-devanagari), system-ui, sans-serif;
 }
 
