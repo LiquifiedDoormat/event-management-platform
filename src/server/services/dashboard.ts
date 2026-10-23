@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/lib/auth/session";
 import type { BusStatus } from "@/generated/prisma/enums";
 import { can, type Actor } from "@/server/policies";
+import { loadScope } from "@/server/policies/scope";
 import { forbidden } from "@/server/errors";
 import { STATUS_KIND, type StatusKind } from "@/lib/transport/status";
 import { eventOf } from "./context";
@@ -102,15 +103,24 @@ export type OpsBusRow = {
  * Airport-board-style view of every active bus in the event, unpaginated
  * (sized for ~150 buses, not the 25-row keyset pages used elsewhere).
  * `summary` always counts the whole fleet; `buses` reflects the filters.
+ *
+ * Staff see the whole event. A cluster coordinator sees only buses whose
+ * hotel is in their own cluster — `summary` and `buses` are both scoped this
+ * way (not just `buses`), so counts/tiles never leak the wider fleet size.
+ * Anyone else is forbidden, same as before.
  */
 export async function getOpsDashboard(
   actor: Actor,
   opts: { statusKind?: StatusKind | "notRunning"; hotelId?: string; clusterId?: string; delayedOnly?: boolean } = {},
 ) {
-  if (!can(actor, "dashboard.viewAll")) throw forbidden();
+  const isClusterCoordinator = actor.role === "CLUSTER_COORDINATOR";
+  if (!can(actor, "dashboard.viewAll") && !isClusterCoordinator) throw forbidden();
   const eventId = eventOf(actor);
+  // loadScope is the same scoping already trusted for canViewBus/getTrackedBus
+  // (a cluster coordinator's hotelIds = every hotel in their own cluster).
+  const hotelIds = isClusterCoordinator ? [...(await loadScope(actor)).hotelIds] : null;
   const rows = await prisma.bus.findMany({
-    where: { isActive: true, hotel: { eventId } },
+    where: { isActive: true, hotel: { eventId }, ...(hotelIds ? { hotelId: { in: hotelIds } } : {}) },
     orderBy: [{ hotel: { name: "asc" } }, { label: "asc" }],
     select: {
       id: true,
@@ -160,5 +170,17 @@ export async function getOpsDashboard(
       (!opts.delayedOnly || b.isDelayed),
   );
 
-  return { summary, buses };
+  // Hotel/cluster filter options, scoped identically to `all` (derived from
+  // the same already-scoped query, not a second unscoped lookup) — only
+  // meant for the cluster-coordinator case, where the page can't call the
+  // staff-only `hotelOptions`/`clusterOptions` helpers. Staff keep using
+  // those helpers directly (unchanged), so this is unused on their path.
+  const hotelOptions = [...new Map(all.map((b) => [b.hotelId, b.hotelName])).entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const clusterOptions = [...new Map(all.filter((b) => b.clusterId).map((b) => [b.clusterId!, b.clusterName!])).entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { summary, buses, hotelOptions, clusterOptions };
 }

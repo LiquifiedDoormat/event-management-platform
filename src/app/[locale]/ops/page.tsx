@@ -1,9 +1,10 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Link } from "@/i18n/navigation";
+import { Link, redirect } from "@/i18n/navigation";
 import { getOpsDashboard } from "@/server/services/dashboard";
 import { hotelOptions } from "@/server/services/hotels";
 import { clusterOptions } from "@/server/services/clusters";
-import { param, requireStaff } from "@/lib/utils/page";
+import { requireUser } from "@/lib/auth/current-user";
+import { param } from "@/lib/utils/page";
 import { DELAYED_ROW_STYLE, STATUS_BADGE_TONE, STATUS_ICON, STATUS_ROW_STYLE, type StatusKind } from "@/lib/transport/status";
 import { PageHeader, Badge, EmptyState } from "@/components/ui/Layout";
 import { FilterSelect } from "@/components/ui/Directory";
@@ -11,23 +12,35 @@ import { AutoRefresh } from "@/components/ui/AutoRefresh";
 
 const KINDS: StatusKind[] = ["boarding", "moving", "arrived"];
 
+/**
+ * Owner/Admin see the whole event, unfiltered-option dropdowns included.
+ * Cluster coordinators (added so they can watch their own cluster's buses
+ * live, same as staff do fleet-wide) get the same page and queries, but
+ * `getOpsDashboard` scopes `summary`/`buses` to their cluster and we use its
+ * derived, already-scoped `hotelOptions`/`clusterOptions` for the filter
+ * dropdowns instead of the staff-only, unscoped `hotelOptions`/`clusterOptions`
+ * services — so the filters never offer another cluster's hotels either.
+ */
 export default async function OpsPage({ params, searchParams }: PageProps<"/[locale]/ops">) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const user = await requireStaff(locale);
+  const user = await requireUser(locale, ["OWNER", "ADMIN", "CLUSTER_COORDINATOR"]);
+  const isStaff = user.role === "OWNER" || user.role === "ADMIN";
+  if (isStaff && !user.eventId) redirect({ href: "/events", locale });
   const sp = await searchParams;
   const statusKind = param(sp.status) as StatusKind | "notRunning" | undefined;
   const hotelId = param(sp.hotelId);
   const clusterId = param(sp.clusterId);
   const delayedOnly = param(sp.delayed) === "1";
 
-  const [t, td, ts, { summary, buses }, hotels, clusters] = await Promise.all([
+  const dashboard = await getOpsDashboard(user, { statusKind, hotelId, clusterId, delayedOnly });
+  const { summary, buses } = dashboard;
+  const [t, td, ts, hotels, clusters] = await Promise.all([
     getTranslations("ops"),
     getTranslations("directory"),
     getTranslations("busStatus"),
-    getOpsDashboard(user, { statusKind, hotelId, clusterId, delayedOnly }),
-    hotelOptions(user),
-    clusterOptions(user),
+    isStaff ? hotelOptions(user) : Promise.resolve(dashboard.hotelOptions),
+    isStaff ? clusterOptions(user) : Promise.resolve(dashboard.clusterOptions),
   ]);
 
   const tiles: { key: StatusKind | "notRunning"; label: string; value: number }[] = [

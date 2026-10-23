@@ -13,11 +13,12 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
   const { locale } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale, ["CUSTOMER"]);
-  const [t, tp, tt, tm, { settings, hotel }, self, linkedGuests] = await Promise.all([
+  const [t, tp, tt, tm, tz, { settings, hotel, zone }, self, linkedGuests] = await Promise.all([
     getTranslations("dashboard"),
     getTranslations("profile"),
     getTranslations("transport"),
     getTranslations("maps"),
+    getTranslations("zones"),
     getCustomerHome(user),
     prisma.user.findUnique({ where: { id: user.id }, select: { gender: true } }),
     getLinkedGuests(user, user.phone),
@@ -76,6 +77,19 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
                 />
                 <MapsLink lat={hotel.latitude} lng={hotel.longitude} label={tm("openInMaps")} />
               </>
+            )}
+          </Section>
+
+          <Section title={tz("title")}>
+            {zone ? (
+              <>
+                <p className="text-xl font-semibold">{zone.name}</p>
+                <p className="text-muted">
+                  {tz("gates")}: {zone.gates.length ? zone.gates.map((g) => g.name).join(", ") : tz("noGates")}
+                </p>
+              </>
+            ) : (
+              <p>{tz("unassignedAttendees")}</p>
             )}
           </Section>
 

@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/prisma";
+import { clusterInput } from "@/lib/validation/entities";
 import { AppError } from "@/server/errors";
 import { getOpsDashboard } from "@/server/services/dashboard";
-import { createEvent, createTwoHotels, hasTestDb, resetDb, staff } from "./helpers";
+import * as clusters from "@/server/services/clusters";
+import { createEvent, createTwoHotels, createUser, hasTestDb, resetDb, staff } from "./helpers";
 
 async function forbiddenErr(p: Promise<unknown>) {
   const err = await p.then(() => null, (e: unknown) => e);
@@ -50,5 +52,36 @@ describe.skipIf(!hasTestDb)("ops dashboard", () => {
     await createTwoHotels(otherEvent.id);
     const otherAdmin = await staff("ADMIN", otherEvent.id);
     expect((await getOpsDashboard(otherAdmin)).buses).toHaveLength(2);
+  });
+
+  it("scopes a cluster coordinator to their own cluster's buses only, in both summary and the bus list — and still refuses a hotel coordinator", async () => {
+    const owner = await staff("OWNER");
+    const eventId = owner.eventId!;
+    const { hotelA, hotelB, busA, busB, coordA } = await createTwoHotels(eventId);
+    await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id, status: "DEPARTED_VENUE", isDelayed: true } });
+    const north = await clusters.createCluster(owner, clusterInput.parse({ name: "North" }));
+    await clusters.addClusterHotel(owner, north.id, hotelA.id);
+    const cc = await createUser("CLUSTER_COORDINATOR", { eventId });
+    await clusters.addClusterCoordinator(owner, north.id, cc.id);
+
+    const dashboard = await getOpsDashboard(cc);
+    // Only hotelA (in their cluster) is counted/listed — hotelB's bus never appears or contributes to the summary.
+    expect(dashboard.summary).toMatchObject({ moving: 1, notRunning: 0, delayed: 1, total: 1 });
+    expect(dashboard.buses.map((b) => b.id)).toEqual([busA.id]);
+    expect(dashboard.hotelOptions.map((h) => h.id)).toEqual([hotelA.id]);
+    expect(dashboard.clusterOptions.map((c) => c.id)).toEqual([north.id]);
+
+    // A clusterId/hotelId from outside their cluster can't be used to widen the result (already excluded upstream).
+    expect((await getOpsDashboard(cc, { hotelId: hotelB.id })).buses).toHaveLength(0);
+
+    // A cluster coordinator not yet assigned to any cluster sees nothing, not an error.
+    const unassignedCc = await createUser("CLUSTER_COORDINATOR", { eventId });
+    const empty = await getOpsDashboard(unassignedCc);
+    expect(empty.summary.total).toBe(0);
+    expect(empty.buses).toHaveLength(0);
+
+    // Existing permissions unchanged: a hotel coordinator still has no ops-dashboard access.
+    await forbiddenErr(getOpsDashboard(coordA));
+    void busB;
   });
 });

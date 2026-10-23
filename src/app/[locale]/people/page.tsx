@@ -78,6 +78,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps<"/[
                 <span>🏨 {p.role === "COORDINATOR" ? t("coordinatesHotel", { hotel: p.hotel.name }) : p.hotel.name}</span>
               )}
               {p.cluster && <span>🗺️ {t("coordinatesCluster", { cluster: p.cluster.name })}</span>}
+              {p.zone && <span>🪑 {p.zone.name}</span>}
             </ListCard>
           ))}
         </ul>

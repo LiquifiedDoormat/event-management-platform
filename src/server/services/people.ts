@@ -64,7 +64,10 @@ const listSelect = (eventId: string) =>
     status: true,
     // An attendee's or hotel coordinator's hotel, or a cluster coordinator's
     // cluster, in this event — same membership row either way.
-    memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } } } },
+    memberships: {
+      where: { eventId },
+      select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+    },
     designatedBuses: { where: { isActive: true, hotel: { eventId } }, select: { id: true, label: true } },
     // List views show only whether medical needs are on file, not the text
     // itself — the full note stays on the person detail page, gated to
@@ -213,11 +216,16 @@ export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?:
       name: true,
       phone: true,
       medicalNeeds: true,
-      memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } },
+      memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } } },
     },
   });
   const page = toPage(rows);
-  return { ...page, items: page.items.map(({ memberships, ...p }) => tagMedicalNeeds({ ...p, hotel: memberships[0]?.hotel ?? null })) };
+  return {
+    ...page,
+    items: page.items.map(({ memberships, ...p }) =>
+      tagMedicalNeeds({ ...p, hotel: memberships[0]?.hotel ?? null, zone: memberships[0]?.zone ?? null }),
+    ),
+  };
 }
 
 export async function getPerson(actor: Actor, id: string) {
@@ -243,7 +251,7 @@ export async function getPerson(actor: Actor, id: string) {
         select: {
           hotel: { select: { id: true, name: true } },
           cluster: { select: { id: true, name: true } },
-          zone: { select: { id: true, name: true } },
+          zone: { select: { id: true, name: true, gates: { orderBy: { name: "asc" }, select: { id: true, name: true } } } },
           room: { select: { id: true, label: true } },
         },
       },
@@ -256,13 +264,18 @@ export async function getPerson(actor: Actor, id: string) {
   });
   if (!person) throw notFound();
   const { pinHash, pinLockedUntil, address, medicalNeeds, ...rest } = shape(person);
+  // `shape`'s generic zone type is the common {id,name} shared with list views;
+  // only here do we also need each gate's name, so take it straight off the
+  // untouched membership row rather than widening `shape` for every caller.
+  const zone = person.memberships[0]?.zone ?? null;
   const result = {
     ...rest,
+    zone,
     // PII, more sensitive than name/phone: never sent to the client at all
     // unless the viewer is allowed to see it, not just hidden in the UI.
     address: canViewAddress(actor, person.id) ? address : undefined,
     hotelId: rest.hotel?.id ?? null,
-    zoneId: rest.zone?.id ?? null,
+    zoneId: zone?.id ?? null,
     roomId: rest.room?.id ?? null,
     // PIN status only (never the hash), for privileged accounts.
     pin: PRIVILEGED.includes(person.role)

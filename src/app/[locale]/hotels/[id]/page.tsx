@@ -5,6 +5,7 @@ import { can } from "@/server/policies";
 import { getHotel } from "@/server/services/hotels";
 import { coordinatorOptions } from "@/server/services/people";
 import { listRooms } from "@/server/services/rooms";
+import { hotelZoneBreakdown } from "@/server/services/zones";
 import { orNotFound, requireStaff } from "@/lib/utils/page";
 import {
   addHotelCoordinatorAction,
@@ -26,12 +27,14 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
   const hotel = await orNotFound(getHotel(user, id));
   const canAssign = can(user, "hotel.manageCoordinators");
   const canManageRooms = can(user, "room.manage");
-  const [t, tc, format, coordinators, rooms] = await Promise.all([
+  const [t, tc, tz, format, coordinators, rooms, zoneBreakdown] = await Promise.all([
     getTranslations("hotels"),
     getTranslations("common"),
+    getTranslations("zones"),
     getFormatter(),
     canAssign ? coordinatorOptions(user) : Promise.resolve([]),
     listRooms(user, hotel.id),
+    hotelZoneBreakdown(user, hotel.id),
   ]);
 
   return (
@@ -120,6 +123,29 @@ export default async function HotelDetailPage({ params }: PageProps<"/[locale]/h
           <Link href={`/buses/new?hotelId=${hotel.id}`} className="text-brand font-semibold underline">
             ＋ {t("addBus")}
           </Link>
+        )}
+      </Section>
+
+      <Section title={t("seatingZones")}>
+        <p className="text-muted">{t("seatingZonesHint")}</p>
+        {zoneBreakdown.length === 0 ? (
+          <p>{t("noZonesAssigned")}</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {zoneBreakdown.map((z) => (
+              <li key={z.zoneId ?? "none"}>
+                {z.zoneId ? (
+                  <Link href={`/zones/${z.zoneId}`} className="text-brand font-semibold underline">
+                    🪑 {z.zoneName}
+                  </Link>
+                ) : (
+                  <span>{t("noZone")}</span>
+                )}
+                {" — "}
+                {tz("guestCount", { count: z.count })}
+              </li>
+            ))}
+          </ul>
         )}
       </Section>
 

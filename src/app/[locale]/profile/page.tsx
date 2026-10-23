@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/current-user";
 import { param } from "@/lib/utils/page";
 import { roleHome } from "@/server/services/auth";
+import { eventOf } from "@/server/services/context";
 import { updateLanguageAction } from "@/features/profile/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField } from "@/components/ui/Fields";
@@ -14,13 +15,21 @@ export default async function ProfilePage({ params, searchParams }: PageProps<"/
   setRequestLocale(locale);
   const user = await requireUser(locale);
   const saved = param((await searchParams).saved) === "1";
-  const [t, tc, tr, hotel, self] = await Promise.all([
+  const [t, tc, tr, tz, hotel, self, membership] = await Promise.all([
     getTranslations("profile"),
     getTranslations("common"),
     getTranslations("roles"),
+    getTranslations("zones"),
     user.hotelId ? prisma.hotel.findUnique({ where: { id: user.hotelId }, select: { name: true } }) : Promise.resolve(null),
     user.role === "CUSTOMER" ? prisma.user.findUnique({ where: { id: user.id }, select: { address: true, gender: true } }) : Promise.resolve(null),
+    user.role === "CUSTOMER"
+      ? prisma.eventMember.findUnique({
+          where: { eventId_userId: { eventId: eventOf(user), userId: user.id } },
+          select: { zone: { select: { id: true, name: true, gates: { orderBy: { name: "asc" }, select: { id: true, name: true } } } } },
+        })
+      : Promise.resolve(null),
   ]);
+  const zone = membership?.zone ?? null;
 
   return (
     <section className="flex flex-col gap-5">
@@ -41,6 +50,8 @@ export default async function ProfilePage({ params, searchParams }: PageProps<"/
             ...(user.role === "CUSTOMER"
               ? ([
                   [t("hotel"), hotel?.name ?? "—"],
+                  [tz("title"), zone?.name ?? "—"],
+                  ...(zone ? ([[tz("gates"), zone.gates.length ? zone.gates.map((g) => g.name).join(", ") : tz("noGates")]] as [string, string][]) : []),
                   [t("gender"), self?.gender ?? "—"],
                   [t("address"), self?.address ?? "—"],
                 ] as [string, string][])

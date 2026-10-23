@@ -67,6 +67,14 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
               ? ([
                   [t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>],
                   [tz("title"), person.zone ? <Link key="z" href={`/zones/${person.zone.id}`} className="text-brand font-semibold underline">{person.zone.name}</Link> : "—"],
+                  ...(person.zone
+                    ? ([
+                        [
+                          tz("gates"),
+                          person.zone.gates.length ? person.zone.gates.map((g) => g.name).join(", ") : tz("noGates"),
+                        ],
+                      ] as [string, React.ReactNode][])
+                    : []),
                   [t("gender"), person.gender || "—"],
                   ...(person.address !== undefined ? ([[t("address"), person.address ?? "—"]] as [string, React.ReactNode][]) : []),
                   ...(person.medicalNeeds !== undefined

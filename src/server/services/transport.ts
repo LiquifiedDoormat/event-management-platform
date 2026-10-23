@@ -25,7 +25,7 @@ export async function getEventSettings() {
  * with the latest status and location timestamp. Never includes other hotels.
  */
 export async function getCustomerHome(user: SessionUser) {
-  const [settings, hotel] = await Promise.all([
+  const [settings, hotel, membership] = await Promise.all([
     getEventSettings(),
     user.hotelId
       ? prisma.hotel.findFirst({
@@ -54,9 +54,13 @@ export async function getCustomerHome(user: SessionUser) {
           },
         })
       : Promise.resolve(null),
+    prisma.eventMember.findUnique({
+      where: { eventId_userId: { eventId: eventOf(user), userId: user.id } },
+      select: { zone: { select: { id: true, name: true, gates: { orderBy: { name: "asc" }, select: { id: true, name: true } } } } },
+    }),
   ]);
   const shaped = hotel ? (({ members, ...rest }) => ({ ...rest, coordinators: members.map((m) => m.user) }))(hotel) : null;
-  return { settings, hotel: shaped };
+  return { settings, hotel: shaped, zone: membership?.zone ?? null };
 }
 
 /**

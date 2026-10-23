@@ -49,6 +49,7 @@ export default async function MyAttendeesPage({ params, searchParams }: PageProp
                 {p.hasMedicalNeeds && <Badge tone="warn">⚕ {tp("medicalNeeds")}</Badge>}
               </p>
               {p.hotel && <p className="text-muted">🏨 {p.hotel.name}</p>}
+              {p.zone && <p className="text-muted">🪑 {p.zone.name}</p>}
               <a href={`tel:${p.phone}`} className="inline-flex min-h-11 items-center self-start font-semibold text-brand underline">
                 📞 {p.phone}
               </a>

@@ -73,11 +73,12 @@ export function CoordinatorNav() {
   return <RoleNav items={items} label={t("label")} />;
 }
 
-/** Cluster coordinator navigation: their own (read-only) home and the org chart. */
+/** Cluster coordinator navigation: their own (read-only) home, the ops board (their cluster only) and the org chart. */
 export function ClusterCoordinatorNav() {
   const t = useTranslations("nav");
   const items: NavItem[] = [
     { href: "/cluster-coordinator", label: t("home"), icon: "🏠" },
+    { href: "/ops", label: t("ops"), icon: "🛫" },
     { href: "/org", label: t("org"), icon: "🪪" },
   ];
   return <RoleNav items={items} label={t("label")} />;

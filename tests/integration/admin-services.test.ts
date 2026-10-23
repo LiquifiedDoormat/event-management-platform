@@ -94,6 +94,33 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
     expect(second.nextCursor).toBeNull();
     expect((await hotels.listHotels(admin, { q: "hotel 07" })).items.map((h) => h.name)).toEqual(["Hotel 07"]);
   });
+
+  it("derives occupancy summary/filtering from active room inventory and assignments, not guest counts", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA, hotelB, guestA } = await createTwoHotels();
+    // hotelA: one room, fully booked (1/1).
+    const roomA = await prisma.room.create({ data: { hotelId: hotelA.id, label: "101", capacity: 1 } });
+    await prisma.eventMember.update({ where: { eventId_userId: { eventId, userId: guestA.id } }, data: { roomId: roomA.id } });
+    // hotelB: a room with space (0/2) -> vacant; a second guest in hotelB is unassigned and shouldn't matter.
+    await prisma.room.create({ data: { hotelId: hotelB.id, label: "201", capacity: 2 } });
+    const empty = await hotels.createHotel(admin, hotel("Empty")); // no rooms at all -> noInventory, not vacant
+
+    const summary = await hotels.getHotelOccupancySummary(admin);
+    expect(summary).toMatchObject({ full: 1, partial: 0, vacant: 1, noInventory: 1 });
+
+    expect((await hotels.listHotels(admin, { occupancyStatus: "full" })).items.map((h) => h.id)).toEqual([hotelA.id]);
+    expect((await hotels.listHotels(admin, { occupancyStatus: "vacant" })).items.map((h) => h.id)).toEqual([hotelB.id]);
+    expect((await hotels.listHotels(admin, { occupancyStatus: "noInventory" })).items.map((h) => h.id)).toEqual([empty.id]);
+  });
+
+  it("filters the hotel list by cluster", async () => {
+    const owner = await staff("OWNER");
+    const { hotelA, hotelB } = await createTwoHotels();
+    const cluster = await prisma.cluster.create({ data: { eventId: owner.eventId!, name: "North" } });
+    await prisma.hotel.update({ where: { id: hotelA.id }, data: { clusterId: cluster.id } });
+    expect((await hotels.listHotels(owner, { clusterId: cluster.id })).items.map((h) => h.id)).toEqual([hotelA.id]);
+    void hotelB;
+  });
 });
 
 describe.skipIf(!hasTestDb)("bus service", () => {

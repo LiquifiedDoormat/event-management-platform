@@ -5,8 +5,17 @@ import type { GateInput, ZoneInput } from "@/lib/validation/entities";
 import { can, type Actor } from "@/server/policies";
 import { conflict, forbidden, notFound } from "@/server/errors";
 import { audit } from "./audit";
-import { OPTIONS_LIMIT, pageArgs, toPage } from "./pagination";
+import { OPTIONS_LIMIT, PAGE_SIZE, toPage } from "./pagination";
 import { eventOf } from "./context";
+
+export type ZoneFullness = "full" | "partial" | "empty";
+
+/** `full` = zero seats left (requires a capacity); `empty` = zero guests allotted; `partial` = some guests and some seats left (or no capacity limit). */
+function matchesFullness(z: { attendeeCount: number; seatsLeft: number | null }, fullness: ZoneFullness): boolean {
+  if (fullness === "empty") return z.attendeeCount === 0;
+  if (fullness === "full") return z.seatsLeft === 0;
+  return z.attendeeCount > 0 && (z.seatsLeft === null || z.seatsLeft > 0);
+}
 
 // Venue zones (seating/sections) and their gates (Phase 5). An attendee is
 // assigned to at most one zone (EventMember.zoneId); a gate optionally serves
@@ -16,9 +25,13 @@ function requireCan(actor: Actor, action: Parameters<typeof can>[1]) {
   if (!can(actor, action)) throw forbidden();
 }
 
-export async function listZones(actor: Actor, opts: { q?: string; cursor?: string; includeInactive?: boolean }) {
+export async function listZones(actor: Actor, opts: { q?: string; cursor?: string; includeInactive?: boolean; fullness?: ZoneFullness }) {
   requireCan(actor, "dashboard.viewAll");
   const eventId = eventOf(actor);
+  // Fullness depends on comparing capacity against a live guest count, which
+  // can't be expressed as a simple `where` clause — fetch every matching zone
+  // (there are at most a few dozen, one per stadium section) and paginate the
+  // filtered result in memory instead of pushing `fullness` into the query.
   const rows = await prisma.zone.findMany({
     where: {
       eventId,
@@ -26,7 +39,6 @@ export async function listZones(actor: Actor, opts: { q?: string; cursor?: strin
       ...(opts.q ? { name: { contains: opts.q, mode: "insensitive" as const } } : {}),
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
-    ...pageArgs(opts.cursor),
     select: {
       id: true,
       name: true,
@@ -35,8 +47,15 @@ export async function listZones(actor: Actor, opts: { q?: string; cursor?: strin
       _count: { select: { gates: true, members: { where: { user: { role: "CUSTOMER", status: "ACTIVE" } } } } },
     },
   });
-  const page = toPage(rows);
-  return { ...page, items: page.items.map(({ _count, ...z }) => ({ ...z, gateCount: _count.gates, attendeeCount: _count.members })) };
+  const all = rows.map(({ _count, ...z }) => ({
+    ...z,
+    gateCount: _count.gates,
+    attendeeCount: _count.members,
+    seatsLeft: z.capacity === null ? null : Math.max(0, z.capacity - _count.members),
+  }));
+  const filtered = opts.fullness ? all.filter((z) => matchesFullness(z, opts.fullness!)) : all;
+  const startIndex = opts.cursor ? filtered.findIndex((z) => z.id === opts.cursor) + 1 : 0;
+  return toPage(filtered.slice(startIndex, startIndex + PAGE_SIZE + 1));
 }
 
 export async function getZone(actor: Actor, id: string) {
@@ -177,13 +196,19 @@ export async function bulkAssignZone(actor: Actor, opts: { zoneId: string; hotel
     }
     const remaining = await lockZoneRemaining(tx, opts.zoneId, eventId);
 
+    const eligibleWhere = {
+      eventId,
+      zoneId: null,
+      user: { role: "CUSTOMER" as const, status: "ACTIVE" as const },
+      ...(opts.hotelId ? { hotelId: opts.hotelId } : {}),
+    };
+    // Counted against the *unmodified* pool, before the update below moves
+    // some of these guests into the zone — counting afterwards would make
+    // "skipped" undercount by however many just got assigned.
+    const totalEligible = await tx.eventMember.count({ where: eligibleWhere });
+
     const candidates = await tx.eventMember.findMany({
-      where: {
-        eventId,
-        zoneId: null,
-        user: { role: "CUSTOMER", status: "ACTIVE" },
-        ...(opts.hotelId ? { hotelId: opts.hotelId } : {}),
-      },
+      where: eligibleWhere,
       orderBy: { user: { name: "asc" } },
       select: { id: true },
       ...(remaining !== null ? { take: remaining } : {}),
@@ -192,11 +217,8 @@ export async function bulkAssignZone(actor: Actor, opts: { zoneId: string; hotel
       await tx.eventMember.updateMany({ where: { id: { in: candidates.map((c) => c.id) } }, data: { zoneId: opts.zoneId } });
     }
 
-    // Count how many were eligible but didn't fit, so the UI can say so —
-    // not just how many fit.
-    const totalEligible = await tx.eventMember.count({
-      where: { eventId, user: { role: "CUSTOMER", status: "ACTIVE" }, ...(opts.hotelId ? { hotelId: opts.hotelId } : { zoneId: null }) },
-    });
+    // How many were eligible but didn't fit, so the UI can say so — not just
+    // how many fit.
     const skipped = Math.max(0, totalEligible - candidates.length);
 
     await audit(tx, actor, "zone.bulkAssign", "Zone", opts.zoneId, {
@@ -208,6 +230,64 @@ export async function bulkAssignZone(actor: Actor, opts: { zoneId: string; hotel
     });
     return { count: candidates.length, skipped, replaced };
   });
+}
+
+/**
+ * Hotels still worth offering in the bulk-assign hotel dropdown: those with at
+ * least one active guest who has no seating zone yet. A hotel disappears only
+ * once every one of its active guests has been allocated to some zone; a
+ * partially-allocated hotel keeps showing up (with its remaining count) so it
+ * stays available for a second, third, etc. zone.
+ */
+export async function hotelsWithUnallocatedGuests(actor: Actor) {
+  requireCan(actor, "dashboard.viewAll");
+  const eventId = eventOf(actor);
+  const rows = await prisma.hotel.findMany({
+    where: { eventId, isActive: true },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      _count: { select: { members: { where: { zoneId: null, user: { role: "CUSTOMER", status: "ACTIVE" } } } } },
+    },
+  });
+  return rows
+    .filter((h) => h._count.members > 0)
+    .map((h) => ({ id: h.id, name: h.name, unallocated: h._count.members }));
+}
+
+/** Hotels represented among a zone's currently-allocated guests, with a count each — for the zone's own detail view. */
+export async function zoneHotelBreakdown(actor: Actor, zoneId: string) {
+  requireCan(actor, "dashboard.viewAll");
+  const eventId = eventOf(actor);
+  const rows = await prisma.eventMember.groupBy({
+    by: ["hotelId"],
+    where: { eventId, zoneId, hotelId: { not: null }, user: { role: "CUSTOMER", status: "ACTIVE" } },
+    _count: { _all: true },
+  });
+  const hotelIds = rows.map((r) => r.hotelId!);
+  const hotels = hotelIds.length ? await prisma.hotel.findMany({ where: { id: { in: hotelIds } }, select: { id: true, name: true } }) : [];
+  const nameOf = new Map(hotels.map((h) => [h.id, h.name]));
+  return rows
+    .map((r) => ({ hotelId: r.hotelId!, hotelName: nameOf.get(r.hotelId!) ?? "—", count: r._count._all }))
+    .sort((a, b) => a.hotelName.localeCompare(b.hotelName));
+}
+
+/** A hotel's active guests grouped by seating zone (and unallocated) — for the hotel's own detail view. */
+export async function hotelZoneBreakdown(actor: Actor, hotelId: string) {
+  requireCan(actor, "dashboard.viewAll");
+  const eventId = eventOf(actor);
+  const rows = await prisma.eventMember.groupBy({
+    by: ["zoneId"],
+    where: { eventId, hotelId, user: { role: "CUSTOMER", status: "ACTIVE" } },
+    _count: { _all: true },
+  });
+  const zoneIds = rows.map((r) => r.zoneId).filter((id): id is string => id !== null);
+  const zoneList = zoneIds.length ? await prisma.zone.findMany({ where: { id: { in: zoneIds } }, select: { id: true, name: true } }) : [];
+  const nameOf = new Map(zoneList.map((z) => [z.id, z.name]));
+  return rows
+    .map((r) => ({ zoneId: r.zoneId, zoneName: r.zoneId ? (nameOf.get(r.zoneId) ?? "—") : null, count: r._count._all }))
+    .sort((a, b) => (a.zoneName ?? "").localeCompare(b.zoneName ?? ""));
 }
 
 /** Zones for dropdowns (active only). */
