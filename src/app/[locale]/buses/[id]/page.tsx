@@ -5,20 +5,23 @@ import { can } from "@/server/policies";
 import { getBus } from "@/server/services/buses";
 import { hotelOptions } from "@/server/services/hotels";
 import { coordinatorOptions } from "@/server/services/people";
+import { listAssignments } from "@/server/services/busCoordinatorSchedule";
 import { orNotFound, requireStaff } from "@/lib/utils/page";
 import {
   addStopAction,
   assignBusCoordinatorAction,
   moveStopAction,
   reassignBusHotelAction,
+  removeScheduledBusCoordinatorAction,
   removeStopAction,
+  scheduleBusCoordinatorAction,
   setBusActiveAction,
   updateBusAction,
   updateStopAction,
 } from "@/features/admin/actions";
 import { cancelTripAction, correctStatusAction, endTripAction, setDelayedAction, startTripAction } from "@/features/trips/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
-import { SelectField } from "@/components/ui/Fields";
+import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, MapsLink, PageHeader, Section } from "@/components/ui/Layout";
 import { BusFields, StopFields } from "@/components/buses/BusFields";
 import { STATUS_BADGE_TONE, STATUS_KIND } from "@/lib/transport/status";
@@ -30,7 +33,7 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
   const bus = await orNotFound(getBus(user, id));
   const isOwner = can(user, "bus.reassignHotel");
   const canEditStops = can(user, "bus.editStops");
-  const [t, tc, ts, ttrip, format, hotels, coordinators] = await Promise.all([
+  const [t, tc, ts, ttrip, format, hotels, coordinators, schedule] = await Promise.all([
     getTranslations("buses"),
     getTranslations("common"),
     getTranslations("busStatus"),
@@ -38,6 +41,7 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
     getFormatter(),
     isOwner ? hotelOptions(user) : Promise.resolve([]),
     isOwner ? coordinatorOptions(user) : Promise.resolve([]),
+    isOwner ? listAssignments(user, id) : Promise.resolve([]),
   ]);
   const trip = bus.trips[0];
   const when = (d: Date) => format.dateTime(d, { dateStyle: "medium", timeStyle: "short" });
@@ -193,6 +197,40 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
               emptyLabel={t("none")}
               options={coordinators.map((c) => ({ value: c.id, label: c.coordinatedHotel ? `${c.name} (${c.coordinatedHotel.name})` : c.name }))}
             />
+          </ActionForm>
+        </Section>
+      )}
+
+      {isOwner && (
+        <Section title={t("coordinatorSchedule")}>
+          <p className="text-muted">{t("coordinatorScheduleHint")}</p>
+          {schedule.length === 0 ? (
+            <p>{t("noSchedule")}</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {schedule.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3">
+                  <span className="font-semibold">
+                    {format.dateTime(a.startsOn, { dateStyle: "medium" })} – {a.endsOn ? format.dateTime(a.endsOn, { dateStyle: "medium" }) : t("ongoing")}
+                  </span>
+                  <Link href={`/coordinators/${a.coordinator.id}`} className="text-brand font-semibold underline">
+                    {a.coordinator.name}
+                  </Link>
+                  {a.notes && <span className="text-muted">{a.notes}</span>}
+                  <ActionForm action={removeScheduledBusCoordinatorAction} hidden={{ id: a.id }} submitLabel={t("removeSchedule")} tone="danger" inline />
+                </li>
+              ))}
+            </ul>
+          )}
+          <ActionForm action={scheduleBusCoordinatorAction} hidden={{ busId: bus.id }} submitLabel={t("addSchedule")} resetOnSuccess>
+            <SelectField
+              name="coordinatorId"
+              label={t("coordinator")}
+              options={coordinators.map((c) => ({ value: c.id, label: c.coordinatedHotel ? `${c.name} (${c.coordinatedHotel.name})` : c.name }))}
+            />
+            <TextField name="startsOn" type="date" label={t("startsOn")} required />
+            <TextField name="endsOn" type="date" label={t("endsOn")} hint={t("endsOnHint")} />
+            <TextField name="notes" label={t("scheduleNotes")} maxLength={300} />
           </ActionForm>
         </Section>
       )}

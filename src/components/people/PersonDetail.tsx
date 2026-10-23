@@ -4,10 +4,12 @@ import { BackLink } from "@/components/ui/BackLink";
 import type { SessionUser } from "@/lib/auth/session";
 import { assignableRoles, can, canEditPerson, canResetPin, canSetAttendeeHotel } from "@/server/policies";
 import { getPerson } from "@/server/services/people";
+import { getCluster } from "@/server/services/clusters";
 import { hotelOptions } from "@/server/services/hotels";
 import { zoneOptions } from "@/server/services/zones";
+import { listRooms } from "@/server/services/rooms";
 import { getAttendanceTrail } from "@/server/services/attendance";
-import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonStatusAction, setPersonZoneAction, updatePersonAction } from "@/features/admin/actions";
+import { changeRoleAction, recordCheckInOutAction, resetPinAction, setPersonHotelAction, setPersonRoomAction, setPersonStatusAction, setPersonZoneAction, updateMedicalNeedsAction, updatePersonAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
 import { SelectField, TextField } from "@/components/ui/Fields";
 import { Badge, DetailList, PageHeader, Section } from "@/components/ui/Layout";
@@ -20,24 +22,33 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
   const isSelf = user.id === person.id;
   const canHotel = person.role === "CUSTOMER" && canSetAttendeeHotel(user, person.hotelId);
   const canZone = person.role === "CUSTOMER" && can(user, "zone.manageAssignments");
+  const canRoom = person.role === "CUSTOMER" && Boolean(person.hotelId) && can(user, "room.manageAssignments");
   const canRole = !isSelf && can(user, "person.changeRole") && canEditPerson(user, person);
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
   const canPin = canResetPin(user, person);
   const canCheckInOut = person.role === "CUSTOMER" && can(user, "attendance.checkInOut");
-  const [t, tc, tr, ts, tz, ta, format, hotels, zones, trail] = await Promise.all([
+  // An Admin selecting a cluster coordinator sees the hotels (and their own
+  // coordinators) under that cluster — same data the Clusters section already
+  // shows, reused rather than re-queried from scratch.
+  const canSeeClusterReports = person.role === "CLUSTER_COORDINATOR" && Boolean(person.cluster) && can(user, "dashboard.viewAll");
+  const [t, tc, tr, ts, tz, th, ta, format, hotels, zones, roomList, trail, cluster] = await Promise.all([
     getTranslations("people"),
     getTranslations("common"),
     getTranslations("roles"),
     getTranslations("busStatus"),
     getTranslations("zones"),
+    getTranslations("hotels"),
     getTranslations("attendance"),
     getFormatter(),
     canHotel ? hotelOptions(user) : Promise.resolve([]),
     canZone ? zoneOptions(user) : Promise.resolve([]),
+    canRoom ? listRooms(user, person.hotelId!) : Promise.resolve([]),
     person.role === "CUSTOMER" ? getAttendanceTrail(user, person.id) : Promise.resolve(null),
+    canSeeClusterReports ? getCluster(user, person.cluster!.id) : Promise.resolve(null),
   ]);
   const hotelSelect = hotels.map((h) => ({ value: h.id, label: h.name }));
   const zoneSelect = zones.map((z) => ({ value: z.id, label: z.name }));
+  const availableRooms = roomList.filter((r) => r.isActive && (r.id === person.roomId || r.occupied < r.capacity));
 
   return (
     <section className="flex flex-col gap-5">
@@ -56,7 +67,30 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
               ? ([
                   [t("hotel"), person.hotel ? <Link key="h" href={`/hotels/${person.hotel.id}`} className="text-brand font-semibold underline">{person.hotel.name}</Link> : <Badge key="h" tone="warn">⚠ {t("noHotel")}</Badge>],
                   [tz("title"), person.zone ? <Link key="z" href={`/zones/${person.zone.id}`} className="text-brand font-semibold underline">{person.zone.name}</Link> : "—"],
+                  ...(person.zone
+                    ? ([
+                        [
+                          tz("gates"),
+                          person.zone.gates.length ? person.zone.gates.map((g) => g.name).join(", ") : tz("noGates"),
+                        ],
+                      ] as [string, React.ReactNode][])
+                    : []),
+                  [t("gender"), person.gender || "—"],
                   ...(person.address !== undefined ? ([[t("address"), person.address ?? "—"]] as [string, React.ReactNode][]) : []),
+                  ...(person.medicalNeeds !== undefined
+                    ? ([
+                        [
+                          t("medicalNeeds"),
+                          person.medicalNeeds ? (
+                            <span key="mn" className="whitespace-pre-wrap">
+                              {person.medicalNeeds}
+                            </span>
+                          ) : (
+                            t("medicalNeedsNone")
+                          ),
+                        ],
+                      ] as [string, React.ReactNode][])
+                    : []),
                 ] as [string, React.ReactNode][])
               : []),
             ...(person.role === "CLUSTER_COORDINATOR"
@@ -93,12 +127,50 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
         />
       </Section>
 
+      {cluster && (
+        <Section title={t("clusterReports")}>
+          {cluster.hotels.length === 0 ? (
+            <p>{t("noClusterHotels")}</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {cluster.hotels.map((h) => (
+                <li key={h.id} className="rounded-lg border border-line p-3 flex flex-col gap-1">
+                  <Link href={`/hotels/${h.id}`} className="text-lg font-semibold text-brand underline">
+                    🏨 {h.name}
+                  </Link>
+                  {h.coordinators.length === 0 ? (
+                    <span className="text-muted">{t("noCoordinator")}</span>
+                  ) : (
+                    <span className="flex flex-wrap gap-x-3">
+                      {h.coordinators.map((c) => (
+                        <Link key={c.id} href={`/coordinators/${c.id}`} className="text-brand font-semibold underline">
+                          {c.name}
+                        </Link>
+                      ))}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
+
       {editable && (
         <Section title={t("edit")}>
           <ActionForm action={updatePersonAction} hidden={{ id: person.id }} submitLabel={tc("save")}>
             <TextField name="name" label={t("name")} defaultValue={person.name} required maxLength={120} />
             <TextField name="phone" label={t("phone")} defaultValue={person.phone} type="tel" inputMode="tel" required hint={t("phoneChangeHint")} />
             {person.role === "CUSTOMER" && <TextField name="address" label={t("address")} defaultValue={person.address ?? ""} multiline />}
+            {person.role === "CUSTOMER" && <TextField name="gender" label={t("gender")} defaultValue={person.gender ?? ""} maxLength={40} />}
+          </ActionForm>
+        </Section>
+      )}
+
+      {person.role === "CUSTOMER" && person.canEditMedicalNeeds && (
+        <Section title={t("medicalNeeds")}>
+          <ActionForm action={updateMedicalNeedsAction} hidden={{ id: person.id }} submitLabel={t("saveMedicalNeeds")}>
+            <TextField name="medicalNeeds" label={t("medicalNeeds")} hint={t("medicalNeedsHint")} defaultValue={person.medicalNeeds ?? ""} multiline />
           </ActionForm>
         </Section>
       )}
@@ -116,6 +188,35 @@ export async function PersonDetail({ user, person, backHref }: { user: SessionUs
           <ActionForm action={setPersonZoneAction} hidden={{ id: person.id }} submitLabel={tc("save")} inline>
             <SelectField name="zoneId" label={tz("title")} defaultValue={person.zoneId ?? ""} emptyLabel={tz("unassignedAttendees")} options={zoneSelect} />
           </ActionForm>
+        </Section>
+      )}
+
+      {canRoom && (
+        <Section title={th("rooms")}>
+          {person.room && (
+            <p className="font-semibold">
+              {th("roomLabel")}: {person.room.label}
+            </p>
+          )}
+          {availableRooms.length === 0 ? (
+            <p>{th("noRooms")}</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {availableRooms.map((r) => {
+                const selected = r.id === person.roomId;
+                return (
+                  <li key={r.id}>
+                    <ActionForm
+                      action={setPersonRoomAction}
+                      hidden={{ id: person.id, roomId: selected ? "" : r.id }}
+                      submitLabel={`${r.label} · ${th("occupancy", { occupied: r.occupied, capacity: r.capacity })}`}
+                      tone={selected ? "primary" : "secondary"}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </Section>
       )}
 

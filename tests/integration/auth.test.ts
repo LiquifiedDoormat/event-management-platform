@@ -180,6 +180,26 @@ describe.skipIf(!hasTestDb)("attendee sign-in (phone + event; no PIN, no SMS)", 
     expect((await loginAttendee({ phone: guestA.phone, eventId, ip })).status).toBe("invalid");
   });
 
+  it("asks which guest when a phone number belongs to more than one, and signs in only the chosen one", async () => {
+    const { eventId, guestA, hotelA } = await createTwoHotels();
+    const sibling = await createUser("CUSTOMER", { eventId, hotelId: hotelA.id });
+    await prisma.user.update({ where: { id: sibling.id }, data: { phone: guestA.phone } });
+
+    const ask = await loginAttendee({ phone: guestA.phone, eventId, ip });
+    expect(ask.status).toBe("choose_guest");
+    if (ask.status !== "choose_guest") throw new Error("expected choose_guest");
+    expect(ask.guests.map((g) => g.id).sort()).toEqual([guestA.id, sibling.id].sort());
+
+    const picked = await loginAttendee({ phone: guestA.phone, eventId, userId: sibling.id, ip });
+    expect(picked.status).toBe("ok");
+    const session = await validateSession(picked.status === "ok" ? picked.token : "");
+    expect(session?.user.id).toBe(sibling.id);
+
+    // An id that doesn't belong to this phone+event is refused, not trusted.
+    const someoneElse = await createUser("CUSTOMER", { eventId });
+    expect(await loginAttendee({ phone: guestA.phone, eventId, userId: someoneElse.id, ip })).toEqual({ status: "invalid" });
+  });
+
   it("rate-limits attendee sign-in attempts per phone number", async () => {
     const eventId = await defaultEvent();
     let last;

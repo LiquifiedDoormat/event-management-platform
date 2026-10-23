@@ -52,11 +52,22 @@ enum AttendanceType {
   DEPART
 }
 
+/// A guest's mark within one dated attendance session for a bus.
+enum AttendanceMark {
+  BOARDED
+  ABSENT
+}
+
 /// Every person with an account: owner, admins, coordinators, attendees.
 model User {
   id              String        @id @default(cuid())
-  /// E.164 format, e.g. +919876543210. Login identifier only.
-  phone           String        @unique
+  /// E.164 format, e.g. +919876543210. Login identifier — but NOT unique: an
+  /// attendee phone may be shared by several guests (e.g. a family travelling
+  /// together), each their own row. Staff/coordinator accounts are still kept
+  /// effectively one-per-phone at the application level (see createPerson) —
+  /// their sign-in has no "choose which guest" step and wouldn't make sense
+  /// shared. See PROJECT_MEMORY.md's Phase 3 entry.
+  phone           String
   name            String
   role            Role          @default(CUSTOMER)
   status          AccountStatus @default(ACTIVE)
@@ -64,6 +75,13 @@ model User {
   /// Postal address (attendees only). Sensitive PII: gated to Owner/Admin and
   /// the attendee themselves — see canViewAddress in policies/index.ts.
   address         String?       @db.Text
+  /// Medical needs/conditions (attendees only). Visible/editable by staff, the
+  /// attendee themselves, and their hotel coordinator — see canEditMedicalNeeds
+  /// in policies/index.ts. A narrower gate than address: coordinators act on this.
+  medicalNeeds    String?       @db.Text
+  /// Free text, not a fixed enum — avoids forcing a choice that doesn't fit.
+  /// Attendees only, like address/medicalNeeds.
+  gender          String?
   /// scrypt hash of the 6-digit PIN (Owner/Admin/Coordinator only). Never the PIN itself.
   /// Null = the person chooses a PIN at their next sign-in (new account or admin reset).
   pinHash           String?
@@ -79,9 +97,15 @@ model User {
   statusEvents     BusStatusEvent[]
   attendanceEvents AttendanceEvent[] @relation("AttendanceSubject")
   recordedAttendance AttendanceEvent[] @relation("AttendanceRecorder")
+  attendanceSessionsCreated AttendanceSession[] @relation("AttendanceSessionCreator")
+  coordinatorAssignments        BusCoordinatorAssignment[] @relation("BusCoordinatorAssignment")
+  coordinatorAssignmentsCreated BusCoordinatorAssignment[] @relation("BusCoordinatorAssignmentCreator")
+  attendanceRecords         AttendanceRecord[]  @relation("AttendanceRecordSubject")
+  attendanceRecordsRecorded AttendanceRecord[]  @relation("AttendanceRecordRecorder")
   sessions         Session[]
   auditLogs        AuditLog[]
 
+  @@index([phone])
   @@index([role, status])
   @@index([name])
 }
@@ -103,6 +127,7 @@ model Event {
   members          EventMember[]
   sessions         Session[]
   attendanceEvents AttendanceEvent[]
+  attendanceSessions AttendanceSession[]
 
   @@index([isActive, name])
 }
@@ -179,6 +204,11 @@ model EventMember {
   /// Attendee's assigned seating/venue zone. Unused by other roles.
   zoneId    String?
   zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  /// Attendee's assigned room at their hotel. Unused by other roles. Not
+  /// enforced at the DB level to always match hotelId's hotel — the service
+  /// layer checks that on assignment (see services/rooms.ts).
+  roomId    String?
+  room      Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@unique([eventId, userId])
@@ -186,6 +216,7 @@ model EventMember {
   @@index([hotelId])
   @@index([clusterId])
   @@index([zoneId])
+  @@index([roomId])
 }
 
 model Hotel {
@@ -209,9 +240,33 @@ model Hotel {
   /// coordinators may share a hotel; see services/hotels.ts).
   members EventMember[]
   buses   Bus[]
+  rooms   Room[]
 
   @@index([eventId, isActive, name])
   @@index([clusterId])
+}
+
+/// One room's inventory at a hotel — number of beds/occupancy, for assigning
+/// guests to specific rooms (Phase 4). A room belongs to one hotel; a guest's
+/// room is tracked on their EventMember row, same pattern as zoneId.
+model Room {
+  id        String   @id @default(cuid())
+  hotelId   String
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  /// e.g. "101" or "Room 12" — just a label, not necessarily a number.
+  label     String
+  /// Maximum occupancy (beds). Always required, unlike Zone.capacity, since
+  /// an uncapped room has no real-world meaning.
+  capacity  Int
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  occupants EventMember[]
+
+  @@unique([hotelId, label])
+  @@index([hotelId, isActive])
 }
 
 model Bus {
@@ -235,8 +290,34 @@ model Bus {
   location         BusLocation?
   statusEvents     BusStatusEvent[]
   attendanceEvents AttendanceEvent[]
+  attendanceSessions AttendanceSession[]
+  coordinatorAssignments BusCoordinatorAssignment[]
 
   @@index([hotelId, isActive])
+}
+
+/// Planned/historical record of who is responsible for a bus over a date
+/// range — distinct from Bus.coordinatorId, which is the single *current*
+/// responsible coordinator actually used for trip-starting and live
+/// tracking. This is a read/scheduling layer on top of that, not a
+/// replacement for it: changing a schedule here does not itself change who
+/// can start a trip today. See PROJECT_MEMORY.md Phase 3 notes.
+model BusCoordinatorAssignment {
+  id            String    @id @default(cuid())
+  busId         String
+  bus           Bus       @relation(fields: [busId], references: [id], onDelete: Restrict)
+  coordinatorId String
+  coordinator   User      @relation("BusCoordinatorAssignment", fields: [coordinatorId], references: [id], onDelete: Restrict)
+  startsOn      DateTime  @db.Date
+  /// null = open-ended (no planned end yet).
+  endsOn        DateTime? @db.Date
+  notes         String?
+  createdById   String
+  createdBy     User      @relation("BusCoordinatorAssignmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now())
+
+  @@index([busId, startsOn])
+  @@index([coordinatorId, startsOn])
 }
 
 /// Ordered stops on a bus's current route. Editable as routes change.
@@ -355,6 +436,58 @@ model AttendanceEvent {
   @@index([eventId, userId, createdAt])
   @@index([busId, createdAt])
   @@index([gateId])
+}
+
+/// A dated roll-call for one bus (e.g. "Day 1 morning boarding"). Replaces the
+/// old live-only boarding list: a session is a record you can create, revisit
+/// and edit later, not just the bus's current moment-to-moment state.
+model AttendanceSession {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  busId       String
+  bus         Bus      @relation(fields: [busId], references: [id], onDelete: Restrict)
+  date        DateTime @db.Date
+  /// Free-text label distinguishing more than one session on the same day for
+  /// the same bus (e.g. "Morning" / "Return trip"); "" means no label given.
+  /// Not nullable — Postgres treats every NULL as distinct in a unique index,
+  /// which would silently defeat the duplicate-session guard below for the
+  /// common case of two unlabeled sessions on the same day.
+  label       String   @default("")
+  createdById String
+  createdBy   User     @relation("AttendanceSessionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+
+  records AttendanceRecord[]
+
+  // Guards against an accidental duplicate create (same bus, same day, same
+  // label) at the database level, not just in the UI.
+  @@unique([busId, date, label])
+  @@index([eventId, date])
+}
+
+/// One guest's mark within one AttendanceSession. "Total/Boarded/Absent" counts
+/// are always derived from these rows plus the hotel's roster, never stored —
+/// so they can't drift out of sync when a record changes.
+model AttendanceRecord {
+  id           String            @id @default(cuid())
+  sessionId    String
+  session      AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User              @relation("AttendanceRecordSubject", fields: [userId], references: [id], onDelete: Cascade)
+  mark         AttendanceMark
+  /// Optional reason, mainly for ABSENT.
+  note         String?
+  recordedById String
+  recordedBy   User              @relation("AttendanceRecordRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  recordedAt   DateTime          @default(now())
+  /// Incremented on every change; a stale write (two coordinators marking the
+  /// same guest at once) is rejected rather than silently overwritten — same
+  /// pattern as Trip.statusVersion.
+  version      Int               @default(0)
+
+  // One mark per guest per session; recordMark() upserts against this.
+  @@unique([sessionId, userId])
 }
 
 /// Server-side session. The cookie holds a random token; only its SHA-256 hash is stored.

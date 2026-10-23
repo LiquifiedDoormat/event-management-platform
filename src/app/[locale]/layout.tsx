@@ -9,7 +9,7 @@ import { Suspense } from "react";
 import { LanguageSwitcher, LanguageSwitcherWithQuery } from "@/components/layout/LanguageSwitcher";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { EventSwitcher } from "@/components/layout/EventSwitcher";
-import { StaffNav } from "@/components/layout/StaffNav";
+import { ClusterCoordinatorNav, CoordinatorNav, StaffNav } from "@/components/layout/StaffNav";
 import { roleHome } from "@/server/services/auth";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import "../globals.css";
@@ -57,6 +57,8 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
             {user && <EventSwitcher user={user} />}
           </header>
           {user && (user.role === "OWNER" || user.role === "ADMIN") && <StaffNav home={roleHome(user.role)} />}
+          {user && user.role === "COORDINATOR" && <CoordinatorNav />}
+          {user && user.role === "CLUSTER_COORDINATOR" && <ClusterCoordinatorNav />}
           {/* Bottom padding keeps content clear of the fixed mobile nav bar. */}
           <main id="main" tabIndex={-1} className="flex-1 w-full max-w-3xl mx-auto px-4 py-6 pb-28 sm:pb-6 outline-none">{children}</main>
         </NextIntlClientProvider>

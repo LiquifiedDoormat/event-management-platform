@@ -1,7 +1,9 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
+import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/current-user";
 import { getCustomerHome, toSnapshot } from "@/server/services/transport";
+import { getLinkedGuests } from "@/server/services/people";
 import { LocationMap } from "@/components/maps/LocationMap";
 import { MapsLink, Section } from "@/components/ui/Layout";
 import { LiveBusSummary } from "@/components/transport/LiveBus";
@@ -11,11 +13,15 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
   const { locale } = await params;
   setRequestLocale(locale);
   const user = await requireUser(locale, ["CUSTOMER"]);
-  const [t, tt, tm, { settings, hotel }] = await Promise.all([
+  const [t, tp, tt, tm, tz, { settings, hotel, zone }, self, linkedGuests] = await Promise.all([
     getTranslations("dashboard"),
+    getTranslations("profile"),
     getTranslations("transport"),
     getTranslations("maps"),
+    getTranslations("zones"),
     getCustomerHome(user),
+    prisma.user.findUnique({ where: { id: user.id }, select: { gender: true } }),
+    getLinkedGuests(user, user.phone),
   ]);
 
   return (
@@ -23,6 +29,11 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
       <div>
         <h1 className="text-3xl font-bold">{t("welcome", { name: user.name })}</h1>
         {user.eventName && <p className="text-lg text-muted">{user.eventName}</p>}
+        {self?.gender && (
+          <p className="text-muted">
+            {tp("gender")}: {self.gender}
+          </p>
+        )}
       </div>
 
       {!hotel ? (
@@ -69,6 +80,19 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
             )}
           </Section>
 
+          <Section title={tz("title")}>
+            {zone ? (
+              <>
+                <p className="text-xl font-semibold">{zone.name}</p>
+                <p className="text-muted">
+                  {tz("gates")}: {zone.gates.length ? zone.gates.map((g) => g.name).join(", ") : tz("noGates")}
+                </p>
+              </>
+            ) : (
+              <p>{tz("unassignedAttendees")}</p>
+            )}
+          </Section>
+
           <Section title={t("yourCoordinator")}>
             {hotel.coordinators.length > 0 ? (
               <ul className="flex flex-col gap-3">
@@ -89,6 +113,20 @@ export default async function CustomerHome({ params }: PageProps<"/[locale]/cust
             )}
           </Section>
         </>
+      )}
+
+      {linkedGuests.length > 0 && (
+        <Section title={t("linkedGuests")}>
+          <p className="text-muted">{t("linkedGuestsHint")}</p>
+          <ul className="flex flex-col gap-2">
+            {linkedGuests.map((g) => (
+              <li key={g.id} className="rounded-lg border border-line p-3">
+                <p className="text-lg font-semibold">{g.name}</p>
+                {g.hotel && <p className="text-muted">🏨 {g.hotel.name}</p>}
+              </li>
+            ))}
+          </ul>
+        </Section>
       )}
     </section>
   );

@@ -17,7 +17,9 @@ import { normalizePhone } from "@/lib/utils/phone";
 export type LoginResult =
   | { status: "ok"; token: string; role: Role; locale: SessionUser["preferredLocale"] }
   | { status: "invalid" | "no_event_access" | "weak_pin" | "pin_mismatch" }
-  | { status: "rate_limited"; retryAfterSeconds: number };
+  | { status: "rate_limited"; retryAfterSeconds: number }
+  /** Several guests share this phone number for this event; the client re-submits with `userId`. */
+  | { status: "choose_guest"; guests: { id: string; name: string }[] };
 
 const PRIVILEGED: Role[] = ["OWNER", "ADMIN", "CLUSTER_COORDINATOR", "COORDINATOR"];
 const LOCK_AFTER = 5;
@@ -159,20 +161,40 @@ export async function setupPin(input: {
   return startSession(user, eventId, input.userAgent);
 }
 
-/** Attendee sign-in: registered phone number for the chosen event. No PIN, no SMS. */
-export async function loginAttendee(input: { phone: string; eventId: string; ip: string; userAgent?: string | null }): Promise<LoginResult> {
+/**
+ * Attendee sign-in: registered phone number for the chosen event. No PIN, no
+ * SMS. A phone number may now belong to more than one guest (e.g. a family
+ * travelling together) — if it does, this returns `choose_guest` with just
+ * their names (nothing else) and the client resubmits with `userId`, which is
+ * re-verified here against the same phone+event+role+active query, never
+ * trusted on its own.
+ */
+export async function loginAttendee(input: {
+  phone: string;
+  eventId: string;
+  userId?: string;
+  ip: string;
+  userAgent?: string | null;
+}): Promise<LoginResult> {
   const phone = normalizePhone(input.phone);
   if (!phone || !input.eventId) return { status: "invalid" };
   const limit = await limited("attendee", phone, input.ip);
   if (limit) return limit;
 
   if (!(await prisma.event.count({ where: { id: input.eventId, isActive: true } }))) return { status: "invalid" };
-  const user = await prisma.user.findFirst({
+  const matches = await prisma.user.findMany({
     where: { phone, status: "ACTIVE", role: "CUSTOMER", memberships: { some: { eventId: input.eventId } } },
-    select: { id: true, role: true, preferredLocale: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, role: true, preferredLocale: true },
   });
-  if (!user) return { status: "invalid" };
-  return startSession(user, input.eventId, input.userAgent);
+  if (matches.length === 0) return { status: "invalid" };
+  if (matches.length === 1) return startSession(matches[0], input.eventId, input.userAgent);
+  if (input.userId) {
+    const chosen = matches.find((u) => u.id === input.userId);
+    if (!chosen) return { status: "invalid" };
+    return startSession(chosen, input.eventId, input.userAgent);
+  }
+  return { status: "choose_guest", guests: matches.map((u) => ({ id: u.id, name: u.name })) };
 }
 
 /**

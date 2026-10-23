@@ -226,11 +226,16 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
   const existing = candidatePhones.length
     ? await prisma.user.findMany({
         where: { phone: { in: candidatePhones } },
-        select: { id: true, phone: true, role: true, memberships: { where: { eventId }, select: { id: true } } },
+        select: { id: true, phone: true, name: true, role: true, memberships: { where: { eventId }, select: { id: true } } },
       })
     : [];
-  const existingByPhone = new Map(existing.map((u) => [u.phone, u]));
-  const seenPhones = new Set<string>();
+  // A phone no longer identifies one person on its own: for CUSTOMER rows,
+  // several different guests may share it, so group by phone and match by
+  // (phone, name) below rather than assuming the first/only hit is the row's
+  // identity. Coordinators keep the stricter one-identity-per-phone rule.
+  const existingByPhone = new Map<string, typeof existing>();
+  for (const u of existing) existingByPhone.set(u.phone, [...(existingByPhone.get(u.phone) ?? []), u]);
+  const seenIdentities = new Set<string>();
 
   return objs.map((obj, i): InternalRow => {
     const rowNum = i + 2;
@@ -247,18 +252,24 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
       hotelId = hotel.id;
     }
 
-    if (seenPhones.has(normPhone)) {
+    const identityKey = role === "CUSTOMER" ? `${normPhone}|${name.trim().toLowerCase()}` : normPhone;
+    if (seenIdentities.has(identityKey)) {
       return { row: rowNum, status: "duplicate", key: "duplicatePhoneInFile", display: { name, phone: normPhone } };
     }
-    const existingUser = existingByPhone.get(normPhone);
+    const candidatesForPhone = existingByPhone.get(normPhone) ?? [];
+    const existingUser = candidatesForPhone.find(
+      (u) => u.role === role && (role !== "CUSTOMER" || u.name.trim().toLowerCase() === name.trim().toLowerCase()),
+    );
     if (existingUser) {
-      if (existingUser.role !== role) return { row: rowNum, status: "invalid", issues: [{ field: "phone", key: "roleMismatch" }] };
       if (existingUser.memberships.length > 0) {
         return { row: rowNum, status: "duplicate", key: "duplicatePhone", display: { name, phone: normPhone } };
       }
+    } else if (role !== "CUSTOMER" && candidatesForPhone.length > 0) {
+      return { row: rowNum, status: "invalid", issues: [{ field: "phone", key: "roleMismatch" }] };
     }
-    seenPhones.add(normPhone);
+    seenIdentities.add(identityKey);
     const address = role === "CUSTOMER" ? (obj.address ?? "").trim() : "";
+    const gender = role === "CUSTOMER" ? (obj.gender ?? "").trim() : "";
 
     return {
       row: rowNum,
@@ -271,6 +282,7 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
           role,
           hotelId: role === "CUSTOMER" && hotelId ? hotelId : undefined,
           address: address || undefined,
+          gender: gender || undefined,
         });
         if (role === "COORDINATOR" && hotelId) await addHotelCoordinator(actor, hotelId, created.id);
         return created.addedExisting ? { kind: "addedExisting" } : { kind: "created" };

@@ -6,16 +6,21 @@
 
 import { z } from "zod";
 import {
+  attendanceMarkSchema,
+  attendanceSessionInput,
   boardTypeSchema,
+  busCoordinatorScheduleInput,
   busCreateInput,
   busInput,
   checkTypeSchema,
   clusterInput,
   gateInput,
   hotelInput,
+  medicalNeedsInput,
   personCreateInput,
   personUpdateInput,
   roleSchema,
+  roomInput,
   statusSchema,
   stopInput,
   zoneInput,
@@ -25,9 +30,12 @@ import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
 import * as clusters from "@/server/services/clusters";
 import * as zones from "@/server/services/zones";
+import * as rooms from "@/server/services/rooms";
 import * as attendance from "@/server/services/attendance";
+import * as attendanceSessions from "@/server/services/attendanceSessions";
+import * as busSchedule from "@/server/services/busCoordinatorSchedule";
 import * as settings from "@/server/services/settings";
-import { optionalId } from "@/lib/validation/common";
+import { optionalId, optionalText } from "@/lib/validation/common";
 import { run } from "@/features/run-action";
 import type { ActionState } from "./action-state";
 
@@ -175,10 +183,36 @@ export async function setPersonZoneAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => zones.setPersonZone(u, id.parse(d.id), optionalRef.parse(d.zoneId)));
 }
 
+const zoneBulkModeSchema = z.enum(["add", "replace"]);
+
 export async function bulkAssignZoneAction(_: ActionState, form: FormData) {
   return run(form, async (u, d) => {
-    await zones.bulkAssignZone(u, { zoneId: id.parse(d.zoneId), hotelId: optionalRef.parse(d.hotelId) ?? undefined });
+    await zones.bulkAssignZone(u, {
+      zoneId: id.parse(d.zoneId),
+      hotelId: optionalRef.parse(d.hotelId) ?? undefined,
+      mode: zoneBulkModeSchema.parse(d.mode),
+    });
   });
+}
+
+// ---- Rooms -------------------------------------------------------------------
+
+export async function createRoomAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await rooms.createRoom(u, id.parse(d.hotelId), roomInput.parse(d));
+  });
+}
+
+export async function updateRoomAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => rooms.updateRoom(u, id.parse(d.id), roomInput.parse(d)));
+}
+
+export async function setRoomActiveAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => rooms.setRoomActive(u, id.parse(d.id), d.active === "true"));
+}
+
+export async function setPersonRoomAction(_: ActionState, form: FormData) {
+  return run(form, (u, d) => rooms.setPersonRoom(u, id.parse(d.id), optionalRef.parse(d.roomId)));
 }
 
 // ---- Attendance -------------------------------------------------------------
@@ -191,6 +225,49 @@ export async function recordCheckInOutAction(_: ActionState, form: FormData) {
 
 export async function recordBoardingAction(_: ActionState, form: FormData) {
   return run(form, (u, d) => attendance.recordBoarding(u, { userId: id.parse(d.userId), busId: id.parse(d.busId), type: boardTypeSchema.parse(d.type) }));
+}
+
+export async function updateMedicalNeedsAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await people.updateMedicalNeeds(u, id.parse(d.id), medicalNeedsInput.parse(d).medicalNeeds);
+  });
+}
+
+// ---- Attendance sessions ----------------------------------------------------
+
+export async function createAttendanceSessionAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    const input = attendanceSessionInput.parse(d);
+    const session = await attendanceSessions.createSession(u, input);
+    return `/coordinator/manifest/${input.busId}/${session.id}`;
+  });
+}
+
+// ---- Bus coordinator schedule ------------------------------------------------
+
+export async function scheduleBusCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    const input = busCoordinatorScheduleInput.parse(d);
+    await busSchedule.scheduleAssignment(u, { ...input, endsOn: input.endsOn ?? null });
+  });
+}
+
+export async function removeScheduledBusCoordinatorAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await busSchedule.removeAssignment(u, id.parse(d.id));
+  });
+}
+
+export async function recordAttendanceMarkAction(_: ActionState, form: FormData) {
+  return run(form, async (u, d) => {
+    await attendanceSessions.recordMark(u, {
+      sessionId: id.parse(d.sessionId),
+      userId: id.parse(d.userId),
+      mark: attendanceMarkSchema.parse(d.mark),
+      note: optionalText(300).parse(d.note) ?? null,
+      expectedVersion: z.coerce.number().int().min(0).parse(d.expectedVersion ?? "0"),
+    });
+  });
 }
 
 // ---- Event settings (Owner) ------------------------------------------------

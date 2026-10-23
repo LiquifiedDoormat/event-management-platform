@@ -7,6 +7,7 @@ import { loginAttendee } from "@/server/services/auth";
 const Body = z.object({
   phone: z.string().min(1).max(32),
   eventId: z.string().min(1).max(40),
+  userId: z.string().min(1).max(40).optional(),
 });
 
 /** Attendee sign-in: phone number registered for the chosen event. */

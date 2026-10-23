@@ -1,7 +1,6 @@
 import { getFormatter, getTranslations, setRequestLocale } from "next-intl/server";
 import { can } from "@/server/policies";
-import { getZone } from "@/server/services/zones";
-import { hotelOptions } from "@/server/services/hotels";
+import { getZone, hotelsWithUnallocatedGuests, zoneHotelBreakdown } from "@/server/services/zones";
 import { orNotFound, requireStaff } from "@/lib/utils/page";
 import { addGateAction, bulkAssignZoneAction, removeGateAction, setZoneActiveAction, updateZoneAction } from "@/features/admin/actions";
 import { ActionForm } from "@/components/ui/ActionForm";
@@ -17,12 +16,14 @@ export default async function ZoneDetailPage({ params }: PageProps<"/[locale]/zo
   const zone = await orNotFound(getZone(user, id));
   const canManage = can(user, "zone.manageGates");
   const canAssign = can(user, "zone.manageAssignments");
-  const [t, tc, format, hotels] = await Promise.all([
+  const [t, tc, format, hotels, hotelBreakdown] = await Promise.all([
     getTranslations("zones"),
     getTranslations("common"),
     getFormatter(),
-    canAssign ? hotelOptions(user) : Promise.resolve([]),
+    canAssign ? hotelsWithUnallocatedGuests(user) : Promise.resolve([]),
+    zoneHotelBreakdown(user, zone.id),
   ]);
+  const availableSeats = zone.capacity === null ? null : Math.max(0, zone.capacity - zone.attendeeCount);
 
   return (
     <section className="flex flex-col gap-5">
@@ -35,10 +36,25 @@ export default async function ZoneDetailPage({ params }: PageProps<"/[locale]/zo
           items={[
             [t("capacity"), zone.capacity ?? "—"],
             [t("attendeeCount"), zone.attendeeCount],
+            [t("availableSeats"), availableSeats === null ? t("noCapacityLimit") : availableSeats],
             [tc("updated"), format.dateTime(zone.updatedAt, { dateStyle: "medium", timeStyle: "short" })],
           ]}
         />
         {zone.notes && <p className="text-muted">{zone.notes}</p>}
+      </Section>
+
+      <Section title={t("hotelsRepresented")}>
+        {hotelBreakdown.length === 0 ? (
+          <p>{t("noHotelsRepresented")}</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {hotelBreakdown.map((h) => (
+              <li key={h.hotelId}>
+                🏨 {h.hotelName} — {t("guestCount", { count: h.count })}
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
       <Section title={t("gates")}>
@@ -67,12 +83,36 @@ export default async function ZoneDetailPage({ params }: PageProps<"/[locale]/zo
       {canAssign && (
         <Section title={t("bulkAssign")}>
           <p className="text-muted">{t("bulkAssignHint")}</p>
-          <ActionForm action={bulkAssignZoneAction} hidden={{ zoneId: zone.id }} submitLabel={t("assign")} inline resetOnSuccess>
+          <ActionForm
+            action={bulkAssignZoneAction}
+            hidden={{ zoneId: zone.id, mode: "add" }}
+            submitLabel={t("bulkAssignAdd")}
+            inline
+            resetOnSuccess
+          >
             <SelectField
               name="hotelId"
               label={t("chooseHotel")}
               emptyLabel={t("unassignedAttendees")}
-              options={hotels.map((h) => ({ value: h.id, label: h.name }))}
+              hint={hotels.length === 0 ? t("allHotelsAllocated") : undefined}
+              options={hotels.map((h) => ({ value: h.id, label: t("hotelOption", { name: h.name, count: h.unallocated }) }))}
+            />
+          </ActionForm>
+          <ActionForm
+            action={bulkAssignZoneAction}
+            hidden={{ zoneId: zone.id, mode: "replace" }}
+            submitLabel={t("bulkAssignReplace")}
+            confirmMessage={t("bulkAssignReplaceConfirm")}
+            tone="danger"
+            inline
+            resetOnSuccess
+          >
+            <SelectField
+              name="hotelId"
+              label={t("chooseHotel")}
+              emptyLabel={t("unassignedAttendees")}
+              hint={hotels.length === 0 ? t("allHotelsAllocated") : undefined}
+              options={hotels.map((h) => ({ value: h.id, label: t("hotelOption", { name: h.name, count: h.unallocated }) }))}
             />
           </ActionForm>
         </Section>

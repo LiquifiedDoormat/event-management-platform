@@ -46,7 +46,16 @@ const EVENTS = [
 
 async function upsertUser(phone: string, name: string, role: Role, pinHash?: string) {
   // Demo staff always get the demo PIN (also on existing local accounts).
-  return prisma.user.upsert({ where: { phone }, update: pinHash ? { pinHash } : {}, create: { phone, name, role, pinHash } });
+  // phone is no longer a unique DB column (CUSTOMER accounts may share one),
+  // so this looks up by phone manually instead of using Prisma's upsert
+  // (which requires a unique `where`) — fine here since seed data assigns
+  // each demo staff phone to exactly one person.
+  const existing = await prisma.user.findFirst({ where: { phone }, select: { id: true } });
+  if (existing) {
+    if (pinHash) await prisma.user.update({ where: { id: existing.id }, data: { pinHash } });
+    return existing;
+  }
+  return prisma.user.create({ data: { phone, name, role, pinHash } });
 }
 
 async function main() {

@@ -6,7 +6,7 @@ import { AppError } from "@/server/errors";
 import * as hotels from "@/server/services/hotels";
 import * as buses from "@/server/services/buses";
 import * as people from "@/server/services/people";
-import { createTwoHotels, createUser, hasTestDb, resetDb, staff } from "./helpers";
+import { createEvent, createTwoHotels, createUser, hasTestDb, resetDb, staff } from "./helpers";
 
 async function expectError(promise: Promise<unknown>, code: AppError["code"], reason?: string) {
   const err = await promise.then(
@@ -94,6 +94,33 @@ describe.skipIf(!hasTestDb)("hotel service", () => {
     expect(second.nextCursor).toBeNull();
     expect((await hotels.listHotels(admin, { q: "hotel 07" })).items.map((h) => h.name)).toEqual(["Hotel 07"]);
   });
+
+  it("derives occupancy summary/filtering from active room inventory and assignments, not guest counts", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA, hotelB, guestA } = await createTwoHotels();
+    // hotelA: one room, fully booked (1/1).
+    const roomA = await prisma.room.create({ data: { hotelId: hotelA.id, label: "101", capacity: 1 } });
+    await prisma.eventMember.update({ where: { eventId_userId: { eventId, userId: guestA.id } }, data: { roomId: roomA.id } });
+    // hotelB: a room with space (0/2) -> vacant; a second guest in hotelB is unassigned and shouldn't matter.
+    await prisma.room.create({ data: { hotelId: hotelB.id, label: "201", capacity: 2 } });
+    const empty = await hotels.createHotel(admin, hotel("Empty")); // no rooms at all -> noInventory, not vacant
+
+    const summary = await hotels.getHotelOccupancySummary(admin);
+    expect(summary).toMatchObject({ full: 1, partial: 0, vacant: 1, noInventory: 1 });
+
+    expect((await hotels.listHotels(admin, { occupancyStatus: "full" })).items.map((h) => h.id)).toEqual([hotelA.id]);
+    expect((await hotels.listHotels(admin, { occupancyStatus: "vacant" })).items.map((h) => h.id)).toEqual([hotelB.id]);
+    expect((await hotels.listHotels(admin, { occupancyStatus: "noInventory" })).items.map((h) => h.id)).toEqual([empty.id]);
+  });
+
+  it("filters the hotel list by cluster", async () => {
+    const owner = await staff("OWNER");
+    const { hotelA, hotelB } = await createTwoHotels();
+    const cluster = await prisma.cluster.create({ data: { eventId: owner.eventId!, name: "North" } });
+    await prisma.hotel.update({ where: { id: hotelA.id }, data: { clusterId: cluster.id } });
+    expect((await hotels.listHotels(owner, { clusterId: cluster.id })).items.map((h) => h.id)).toEqual([hotelA.id]);
+    void hotelB;
+  });
 });
 
 describe.skipIf(!hasTestDb)("bus service", () => {
@@ -170,8 +197,14 @@ describe.skipIf(!hasTestDb)("people service", () => {
       people.createPerson(admin, personCreateInput.parse({ name: "X", phone: "98111 33333", role: "ADMIN" })),
       "forbidden",
     );
+    // A different guest with the same number (e.g. a family member) is a new
+    // person, not a duplicate -- identity is phone + name together now, not
+    // phone alone.
+    const sibling = await people.createPerson(admin, personCreateInput.parse({ name: "Sibling Guest", phone: "98111 22222", role: "CUSTOMER" }));
+    expect(sibling.id).not.toBe(id);
+    // The exact same name AND phone, still registering for this event, is the duplicate case.
     await expectError(
-      people.createPerson(admin, personCreateInput.parse({ name: "Dup", phone: "98111 22222", role: "CUSTOMER" })),
+      people.createPerson(admin, personCreateInput.parse({ name: "New Guest", phone: "98111 22222", role: "CUSTOMER" })),
       "conflict",
       "duplicatePhone",
     );
@@ -188,6 +221,61 @@ describe.skipIf(!hasTestDb)("people service", () => {
     expect((await people.getPerson(admin, id)).address).toBe("221B Baker St");
     expect((await people.getPerson(guest, id)).address).toBe("221B Baker St");
     expect((await people.getPerson(coordA, id)).address).toBeUndefined();
+  });
+
+  it("shows a guest the other guests sharing their phone number, scoped to the current event, never other details", async () => {
+    const { eventId, hotelB, guestA } = await createTwoHotels();
+    const sibling = await createUser("CUSTOMER", { eventId, hotelId: hotelB.id });
+    await prisma.user.update({ where: { id: sibling.id }, data: { phone: guestA.phone } });
+    // Same phone, but a different event entirely -- must never show up.
+    const otherEvent = (await createEvent("Other")).id;
+    const unrelated = await createUser("CUSTOMER", { eventId: otherEvent });
+    await prisma.user.update({ where: { id: unrelated.id }, data: { phone: guestA.phone } });
+
+    const linked = await people.getLinkedGuests(guestA, guestA.phone);
+    expect(linked).toHaveLength(1);
+    expect(linked[0]).toMatchObject({ id: sibling.id, name: sibling.name, hotel: { id: hotelB.id } });
+    expect(linked.some((g) => g.id === unrelated.id)).toBe(false);
+    expect(linked.some((g) => g.id === guestA.id)).toBe(false);
+
+    await expectError(people.getLinkedGuests(await staff("ADMIN"), guestA.phone), "forbidden");
+  });
+
+  it("stores and updates a guest's gender", async () => {
+    const admin = await staff("ADMIN");
+    const { hotelA } = await createTwoHotels();
+    const input = personCreateInput.parse({ name: "Gender Guest", phone: "98111 77777", role: "CUSTOMER", hotelId: hotelA.id, gender: "Non-binary" });
+    const { id } = await people.createPerson(admin, input);
+    expect((await people.getPerson(admin, id)).gender).toBe("Non-binary");
+
+    await people.updatePerson(admin, id, { name: "Gender Guest", phone: "+919811177777", address: "", gender: "Prefer not to say" });
+    expect((await people.getPerson(admin, id)).gender).toBe("Prefer not to say");
+  });
+
+  it("shows medical needs to staff, the guest, and their own hotel coordinator -- wider than address", async () => {
+    const admin = await staff("ADMIN");
+    const { eventId, hotelA, hotelB, coordA, coordB } = await createTwoHotels();
+    const input = personCreateInput.parse({ name: "Needs Guest", phone: "98111 66666", role: "CUSTOMER", hotelId: hotelA.id, medicalNeeds: "Peanut allergy" });
+    const { id } = await people.createPerson(admin, input);
+    const guest = { id, role: "CUSTOMER" as const, hotelId: hotelA.id, eventId };
+
+    expect((await people.getPerson(admin, id)).medicalNeeds).toBe("Peanut allergy");
+    expect((await people.getPerson(guest, id)).medicalNeeds).toBe("Peanut allergy");
+    // Unlike address, the guest's own hotel coordinator can see it (and edit it).
+    const seenByCoordinator = await people.getPerson(coordA, id);
+    expect(seenByCoordinator.medicalNeeds).toBe("Peanut allergy");
+    expect(seenByCoordinator.canEditMedicalNeeds).toBe(true);
+    // A different hotel's coordinator gets neither.
+    void hotelB;
+    await expectError(people.getPerson(coordB, id), "not_found");
+
+    await people.updateMedicalNeeds(coordA, id, "Peanut allergy; carries EpiPen");
+    expect((await people.getPerson(admin, id)).medicalNeeds).toBe("Peanut allergy; carries EpiPen");
+    await expectError(people.updateMedicalNeeds(coordB, id, "tampered"), "forbidden");
+
+    const filtered = await people.listPeople(admin, { hasMedicalNeeds: true });
+    expect(filtered.items.map((p) => p.id)).toContain(id);
+    expect(filtered.items.every((p) => p.hasMedicalNeeds)).toBe(true);
   });
 
   it("never lets anyone create an owner through the app", () => {

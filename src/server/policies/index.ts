@@ -45,6 +45,8 @@ export type Action =
   | "zone.deactivate"
   | "zone.manageGates"
   | "zone.manageAssignments"
+  | "room.manage"
+  | "room.manageAssignments"
   | "attendance.checkInOut"
   | "bus.create"
   | "bus.update"
@@ -85,6 +87,9 @@ const ADMIN_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "zone.deactivate",
   "zone.manageGates",
   "zone.manageAssignments",
+  // Same provisioning rationale as the zone actions just above.
+  "room.manage",
+  "room.manageAssignments",
   // Venue check-in/out is a staff (gate-desk) action; boarding/departure is
   // recorded by the trip's own coordinator — see canRecordBoarding below.
   "attendance.checkInOut",
@@ -210,4 +215,29 @@ export function canStartTrip(actor: Actor, scope: Scope, busId: string): boolean
 /** Boarding/departure attendance events: staff, or a coordinator for a bus they operate. */
 export function canRecordBoarding(actor: Actor, scope: Scope, busId: string): boolean {
   return can(actor, "trip.manage") || (actor.role === "COORDINATOR" && scope.operableBusIds.has(busId));
+}
+
+/** Creating/editing an attendance session's records: same rule as recording boarding. */
+export function canManageAttendanceSession(actor: Actor, scope: Scope, busId: string): boolean {
+  return canRecordBoarding(actor, scope, busId);
+}
+
+/**
+ * Viewing attendance sessions for a bus: staff, the cluster coordinator of its
+ * hotel's cluster, or the bus's own operating coordinator — the same audience
+ * `canViewBus` already allows to see the bus at all.
+ */
+export function canViewAttendanceSession(actor: Actor, scope: Scope, bus: { hotelId: string }): boolean {
+  return canViewBus(actor, scope, bus);
+}
+
+/**
+ * A guest's medical-needs text: staff, the guest themselves, or the hotel
+ * coordinator of their hotel — narrower than canViewPerson (excludes cluster
+ * coordinators, who have no reason to act on it) but wider than canViewAddress
+ * (coordinators need this one to do their job, unlike a postal address).
+ */
+export function canEditMedicalNeeds(actor: Actor, scope: Scope, target: { id: string; role: Role; hotelId: string | null }): boolean {
+  if (isStaff(actor) || actor.id === target.id) return true;
+  return actor.role === "COORDINATOR" && target.role === "CUSTOMER" && target.hotelId !== null && scope.hotelIds.has(target.hotelId);
 }

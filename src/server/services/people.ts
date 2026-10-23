@@ -5,6 +5,7 @@ import type { PersonCreateInput, PersonUpdateInput } from "@/lib/validation/enti
 import {
   assignableRoles,
   can,
+  canEditMedicalNeeds,
   canEditPerson,
   canResetPin,
   canSetAttendeeHotel,
@@ -63,9 +64,22 @@ const listSelect = (eventId: string) =>
     status: true,
     // An attendee's or hotel coordinator's hotel, or a cluster coordinator's
     // cluster, in this event — same membership row either way.
-    memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } } } },
+    memberships: {
+      where: { eventId },
+      select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+    },
     designatedBuses: { where: { isActive: true, hotel: { eventId } }, select: { id: true, label: true } },
+    // List views show only whether medical needs are on file, not the text
+    // itself — the full note stays on the person detail page, gated to
+    // whoever canEditMedicalNeeds allows (see getPerson).
+    medicalNeeds: true,
   }) satisfies Prisma.UserSelect;
+
+/** Strips the raw medical-needs text from a list row down to a yes/no tag. */
+const tagMedicalNeeds = <T extends { medicalNeeds: string | null }>({ medicalNeeds, ...rest }: T) => ({
+  ...rest,
+  hasMedicalNeeds: Boolean(medicalNeeds),
+});
 
 function searchWhere(q?: string): Prisma.UserWhereInput {
   if (!q) return {};
@@ -81,19 +95,30 @@ function searchWhere(q?: string): Prisma.UserWhereInput {
 
 const shape = <
   T extends {
-    memberships: { hotel: { id: string; name: string } | null; cluster: { id: string; name: string } | null; zone?: { id: string; name: string } | null }[];
+    memberships: {
+      hotel: { id: string; name: string } | null;
+      cluster: { id: string; name: string } | null;
+      zone?: { id: string; name: string } | null;
+      room?: { id: string; label: string } | null;
+    }[];
   },
 >(
   p: T,
 ) => {
   const { memberships, ...rest } = p;
-  return { ...rest, hotel: memberships[0]?.hotel ?? null, cluster: memberships[0]?.cluster ?? null, zone: memberships[0]?.zone ?? null };
+  return {
+    ...rest,
+    hotel: memberships[0]?.hotel ?? null,
+    cluster: memberships[0]?.cluster ?? null,
+    zone: memberships[0]?.zone ?? null,
+    room: memberships[0]?.room ?? null,
+  };
 };
 
 /** Directory of the current event: search by name, phone digits or exact id. Staff only. */
 export async function listPeople(
   actor: Actor,
-  opts: { q?: string; cursor?: string; role?: Role; status?: AccountStatus; hotelId?: string },
+  opts: { q?: string; cursor?: string; role?: Role | Role[]; status?: AccountStatus; hotelId?: string; hasMedicalNeeds?: true },
 ) {
   if (!can(actor, "dashboard.viewAll")) throw forbidden();
   const eventId = eventOf(actor);
@@ -102,9 +127,10 @@ export async function listPeople(
       AND: [
         inEvent(eventId),
         searchWhere(opts.q),
-        opts.role ? { role: opts.role } : {},
+        opts.role ? { role: Array.isArray(opts.role) ? { in: opts.role } : opts.role } : {},
         opts.status ? { status: opts.status } : {},
         opts.hotelId ? { memberships: { some: { eventId, hotelId: opts.hotelId } } } : {},
+        opts.hasMedicalNeeds ? { medicalNeeds: { not: null } } : {},
       ],
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -112,7 +138,7 @@ export async function listPeople(
     select: listSelect(eventId),
   });
   const page = toPage(rows);
-  return { ...page, items: page.items.map(shape) };
+  return { ...page, items: page.items.map((p) => tagMedicalNeeds(shape(p))) };
 }
 
 /**
@@ -130,6 +156,7 @@ export async function exportAttendees(actor: Actor) {
       name: true,
       phone: true,
       address: true,
+      gender: true,
       memberships: {
         where: { eventId },
         select: { hotel: { select: { name: true } }, zone: { select: { name: true } } },
@@ -141,15 +168,35 @@ export async function exportAttendees(actor: Actor) {
     phone: r.phone,
     hotel: r.memberships[0]?.hotel?.name ?? "",
     zone: r.memberships[0]?.zone?.name ?? "",
+    gender: r.gender ?? "",
     address: r.address ?? "",
   }));
+}
+
+/**
+ * Other guests registered with the same phone number, in the same event (e.g.
+ * a family travelling together) — so a signed-in guest can see who else is
+ * linked to their number, per the brief. Deliberately minimal: name and hotel
+ * only, never medical needs, address, or any other guest's phone number, and
+ * scoped strictly to the current event so a shared number never surfaces an
+ * unrelated registration from another event.
+ */
+export async function getLinkedGuests(actor: Actor, phone: string) {
+  if (actor.role !== "CUSTOMER") throw forbidden();
+  const eventId = eventOf(actor);
+  const rows = await prisma.user.findMany({
+    where: { phone, role: "CUSTOMER", status: "ACTIVE", id: { not: actor.id }, memberships: { some: { eventId } } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } } },
+  });
+  return rows.map(({ memberships, ...r }) => ({ ...r, hotel: memberships[0]?.hotel ?? null }));
 }
 
 /**
  * Coordinator's attendee list: active attendees of the hotels the coordinator
  * is responsible for in the current event. Filtering is done in the database.
  */
-export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?: string }) {
+export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?: string; hasMedicalNeeds?: true }) {
   if (actor.role !== "COORDINATOR") throw forbidden();
   const eventId = eventOf(actor);
   const hotelIds = [...(await loadScope(actor)).hotelIds];
@@ -159,14 +206,26 @@ export async function listMyAttendees(actor: Actor, opts: { q?: string; cursor?:
       AND: [
         { role: "CUSTOMER", status: "ACTIVE", memberships: { some: { eventId, hotelId: { in: hotelIds } } } },
         searchWhere(opts.q),
+        opts.hasMedicalNeeds ? { medicalNeeds: { not: null } } : {},
       ],
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     ...pageArgs(opts.cursor),
-    select: { id: true, name: true, phone: true, memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } } } } },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      medicalNeeds: true,
+      memberships: { where: { eventId }, select: { hotel: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } } },
+    },
   });
   const page = toPage(rows);
-  return { ...page, items: page.items.map(({ memberships, ...p }) => ({ ...p, hotel: memberships[0]?.hotel ?? null })) };
+  return {
+    ...page,
+    items: page.items.map(({ memberships, ...p }) =>
+      tagMedicalNeeds({ ...p, hotel: memberships[0]?.hotel ?? null, zone: memberships[0]?.zone ?? null }),
+    ),
+  };
 }
 
 export async function getPerson(actor: Actor, id: string) {
@@ -178,6 +237,8 @@ export async function getPerson(actor: Actor, id: string) {
       name: true,
       phone: true,
       address: true,
+      medicalNeeds: true,
+      gender: true,
       role: true,
       status: true,
       preferredLocale: true,
@@ -187,7 +248,12 @@ export async function getPerson(actor: Actor, id: string) {
       pinLockedUntil: true,
       memberships: {
         where: { eventId },
-        select: { hotel: { select: { id: true, name: true } }, cluster: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+        select: {
+          hotel: { select: { id: true, name: true } },
+          cluster: { select: { id: true, name: true } },
+          zone: { select: { id: true, name: true, gates: { orderBy: { name: "asc" }, select: { id: true, name: true } } } },
+          room: { select: { id: true, label: true } },
+        },
       },
       designatedBuses: { where: { hotel: { eventId } }, select: { id: true, label: true, isActive: true }, orderBy: { label: "asc" } },
       trips: {
@@ -197,14 +263,20 @@ export async function getPerson(actor: Actor, id: string) {
     },
   });
   if (!person) throw notFound();
-  const { pinHash, pinLockedUntil, address, ...rest } = shape(person);
+  const { pinHash, pinLockedUntil, address, medicalNeeds, ...rest } = shape(person);
+  // `shape`'s generic zone type is the common {id,name} shared with list views;
+  // only here do we also need each gate's name, so take it straight off the
+  // untouched membership row rather than widening `shape` for every caller.
+  const zone = person.memberships[0]?.zone ?? null;
   const result = {
     ...rest,
+    zone,
     // PII, more sensitive than name/phone: never sent to the client at all
     // unless the viewer is allowed to see it, not just hidden in the UI.
     address: canViewAddress(actor, person.id) ? address : undefined,
     hotelId: rest.hotel?.id ?? null,
-    zoneId: rest.zone?.id ?? null,
+    zoneId: zone?.id ?? null,
+    roomId: rest.room?.id ?? null,
     // PIN status only (never the hash), for privileged accounts.
     pin: PRIVILEGED.includes(person.role)
       ? {
@@ -215,7 +287,21 @@ export async function getPerson(actor: Actor, id: string) {
   };
   const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
   if (!canViewPerson(actor, scope, result)) throw notFound();
-  return result;
+  const canSeeMedicalNeeds = canEditMedicalNeeds(actor, scope, result);
+  return { ...result, medicalNeeds: canSeeMedicalNeeds ? medicalNeeds : undefined, canEditMedicalNeeds: canSeeMedicalNeeds };
+}
+
+/** Updates a guest's medical-needs note. Staff, the guest, or their hotel coordinator. */
+export async function updateMedicalNeeds(actor: Actor, id: string, medicalNeeds: string | undefined) {
+  const eventId = eventOf(actor);
+  const person = await findInEvent(prisma, id, eventId);
+  if (person.role !== "CUSTOMER") throw forbidden();
+  const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
+  if (!canEditMedicalNeeds(actor, scope, { id: person.id, role: person.role, hotelId: person.membership?.hotelId ?? null })) throw forbidden();
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id }, data: { medicalNeeds: medicalNeeds ?? null } });
+    await audit(tx, actor, "person.updateMedicalNeeds", "User", id, {});
+  });
 }
 
 export type CreatePersonResult = { id: string; addedExisting?: boolean };
@@ -234,23 +320,34 @@ export async function createPerson(actor: Actor, input: PersonCreateInput): Prom
 
   return prisma.$transaction(async (tx) => {
     if (hotelId) await requireActiveHotel(tx, hotelId, eventId);
-    const existing = await tx.user.findUnique({
+    // A phone number is no longer a unique identity on its own: for CUSTOMER
+    // accounts, several different guests (e.g. a family) may share one. The
+    // real identity check is phone + name together, not phone alone. Staff
+    // and coordinator roles keep the old, stricter rule (phone alone is the
+    // identity) — their PIN sign-in has no "choose who you are" step.
+    const candidates = await tx.user.findMany({
       where: { phone: input.phone },
-      select: { id: true, role: true, memberships: { where: { eventId }, select: { id: true } } },
+      select: { id: true, name: true, role: true, memberships: { where: { eventId }, select: { id: true } } },
     });
-    if (existing) {
+    const sameIdentity = candidates.find(
+      (c) => c.role === input.role && (input.role !== "CUSTOMER" || c.name.trim().toLowerCase() === input.name.trim().toLowerCase()),
+    );
+    if (sameIdentity) {
       // Same person joining another event: add a membership, keep their account.
-      if (!member || existing.role !== input.role || existing.memberships.length > 0) throw conflict("duplicatePhone");
-      await tx.eventMember.create({ data: { eventId, userId: existing.id, hotelId } });
-      await audit(tx, actor, "person.addToEvent", "User", existing.id, { eventId, hotelId });
-      return { id: existing.id, addedExisting: true };
+      if (!member || sameIdentity.memberships.length > 0) throw conflict("duplicatePhone");
+      await tx.eventMember.create({ data: { eventId, userId: sameIdentity.id, hotelId } });
+      await audit(tx, actor, "person.addToEvent", "User", sameIdentity.id, { eventId, hotelId });
+      return { id: sameIdentity.id, addedExisting: true };
     }
+    if (input.role !== "CUSTOMER" && candidates.length > 0) throw conflict("duplicatePhone");
     const user = await tx.user.create({
       data: {
         name: input.name,
         phone: input.phone,
         role: input.role,
         address: input.role === "CUSTOMER" ? (input.address ?? null) : null,
+        medicalNeeds: input.role === "CUSTOMER" ? (input.medicalNeeds ?? null) : null,
+        gender: input.role === "CUSTOMER" ? (input.gender ?? null) : null,
         ...(member ? { memberships: { create: { eventId, hotelId } } } : {}),
       },
       select: { id: true },
@@ -266,8 +363,15 @@ export async function updatePerson(actor: Actor, id: string, input: PersonUpdate
     return await prisma.$transaction(async (tx) => {
       const target = await findInEvent(tx, id, eventOf(actor));
       if (!can(actor, "person.update") || !canEditPerson(actor, target)) throw forbidden();
-      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null } });
       const phoneChanged = target.phone !== input.phone;
+      // Phone is no longer unique in the database (CUSTOMER accounts may
+      // share one), so a staff/coordinator phone change needs its own check:
+      // their role still keeps phone as a one-identity key at the app level.
+      if (phoneChanged && target.role !== "CUSTOMER") {
+        const clash = await tx.user.findFirst({ where: { phone: input.phone, id: { not: id } }, select: { id: true } });
+        if (clash) throw conflict("duplicatePhone");
+      }
+      await tx.user.update({ where: { id }, data: { name: input.name, phone: input.phone, address: input.address ?? null, gender: input.gender ?? null } });
       if (phoneChanged) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
       await audit(tx, actor, "person.update", "User", id, { phoneChanged });
     });

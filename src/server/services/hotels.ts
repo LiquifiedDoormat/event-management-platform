@@ -4,19 +4,28 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { HotelInput } from "@/lib/validation/entities";
 import { can, type Actor } from "@/server/policies";
 import { AppError, conflict, forbidden, notFound } from "@/server/errors";
+import { hotelOccupancy, type HotelOccupancyStatus } from "@/lib/hotels/occupancy";
 import { audit } from "./audit";
-import { OPTIONS_LIMIT, pageArgs, toPage } from "./pagination";
+import { OPTIONS_LIMIT, PAGE_SIZE, pageArgs, toPage } from "./pagination";
 import { eventOf } from "./context";
 
 function requireCan(actor: Actor, action: Parameters<typeof can>[1]) {
   if (!can(actor, action)) throw forbidden();
 }
 
-export async function listHotels(actor: Actor, opts: { q?: string; cursor?: string; includeInactive?: boolean }) {
+const ROOMS_SELECT = { where: { isActive: true as const }, select: { capacity: true, _count: { select: { occupants: true } } } };
+const toRoomCounts = (rooms: { capacity: number; _count: { occupants: number } }[]) =>
+  rooms.map((r) => ({ capacity: r.capacity, occupied: r._count.occupants }));
+
+export async function listHotels(
+  actor: Actor,
+  opts: { q?: string; cursor?: string; includeInactive?: boolean; clusterId?: string; occupancyStatus?: HotelOccupancyStatus },
+) {
   requireCan(actor, "dashboard.viewAll");
   const where: Prisma.HotelWhereInput = {
     eventId: eventOf(actor),
     ...(opts.includeInactive ? {} : { isActive: true }),
+    ...(opts.clusterId ? { clusterId: opts.clusterId } : {}),
     ...(opts.q
       ? {
           OR: [
@@ -27,25 +36,58 @@ export async function listHotels(actor: Actor, opts: { q?: string; cursor?: stri
         }
       : {}),
   };
+  const baseSelect = {
+    id: true,
+    name: true,
+    address: true,
+    isActive: true,
+    members: { where: { user: { role: "COORDINATOR" as const, status: "ACTIVE" as const } }, select: { user: { select: { id: true, name: true } } } },
+    _count: {
+      select: {
+        buses: { where: { isActive: true } },
+        members: { where: { user: { role: "CUSTOMER" as const, status: "ACTIVE" as const } } },
+      },
+    },
+  };
+  // Occupancy status is derived from active room inventory vs. assignments,
+  // not expressible as a plain `where` clause (same precedent as listZones'
+  // `fullness` filter) — only when filtering by it, fetch every matching
+  // hotel (plus its rooms) and paginate the filtered result in memory
+  // instead of pushing it into the query.
+  if (!opts.occupancyStatus) {
+    const rows = await prisma.hotel.findMany({ where, orderBy: [{ name: "asc" }, { id: "asc" }], ...pageArgs(opts.cursor), select: baseSelect });
+    return toPage(rows.map(({ members, ...h }) => ({ ...h, coordinators: members.map((m) => m.user) })));
+  }
   const rows = await prisma.hotel.findMany({
     where,
     orderBy: [{ name: "asc" }, { id: "asc" }],
-    ...pageArgs(opts.cursor),
-    select: {
-      id: true,
-      name: true,
-      address: true,
-      isActive: true,
-      members: { where: { user: { role: "COORDINATOR", status: "ACTIVE" } }, select: { user: { select: { id: true, name: true } } } },
-      _count: {
-        select: {
-          buses: { where: { isActive: true } },
-          members: { where: { user: { role: "CUSTOMER", status: "ACTIVE" } } },
-        },
-      },
-    },
+    select: { ...baseSelect, rooms: ROOMS_SELECT },
   });
-  return toPage(rows.map(({ members, ...h }) => ({ ...h, coordinators: members.map((m) => m.user) })));
+  const all = rows.map(({ members, rooms, ...h }) => ({
+    ...h,
+    coordinators: members.map((m) => m.user),
+    occupancyStatus: hotelOccupancy(toRoomCounts(rooms)).status,
+  }));
+  const filtered = all.filter((h) => h.occupancyStatus === opts.occupancyStatus);
+  const startIndex = opts.cursor ? filtered.findIndex((h) => h.id === opts.cursor) + 1 : 0;
+  return toPage(filtered.slice(startIndex, startIndex + PAGE_SIZE + 1));
+}
+
+/**
+ * Hotel-occupancy counts for the Hotels page's summary cards — always the
+ * whole active-hotel set in the event, independent of the list's own
+ * q/cluster/occupancy filters (same "summary reflects the whole scope"
+ * precedent as the bus ops board).
+ */
+export async function getHotelOccupancySummary(actor: Actor) {
+  requireCan(actor, "dashboard.viewAll");
+  const rows = await prisma.hotel.findMany({
+    where: { eventId: eventOf(actor), isActive: true },
+    select: { rooms: ROOMS_SELECT },
+  });
+  const summary = { full: 0, partial: 0, vacant: 0, noInventory: 0 };
+  for (const h of rows) summary[hotelOccupancy(toRoomCounts(h.rooms)).status]++;
+  return summary;
 }
 
 export async function getHotel(actor: Actor, id: string) {
