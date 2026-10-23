@@ -21,7 +21,7 @@ export default async function LoginPage({ params }: PageProps<"/[locale]/login">
         style={{ backgroundImage: "url(/images/login-bg.webp)" }}
         aria-hidden="true"
       />
-      <section className="flex flex-col gap-4 max-w-md rounded-2xl border border-white/40 bg-white/80 p-6 shadow-xl backdrop-blur-sm">
+      <section className="flex flex-col gap-4 max-w-md mx-auto rounded-2xl border border-white/40 bg-white/80 p-6 shadow-xl backdrop-blur-sm">
         <h1 className="text-3xl font-bold">{t("title")}</h1>
         <p className="text-lg">{t("intro")}</p>
         <LoginForm events={events} />

@@ -325,7 +325,25 @@ export async function previewImport(actor: Actor, entity: ImportEntity, sheet: P
  * time, each through the normal create service (so each row is its own
  * transaction and a failure on one row never undoes another). Never a
  * partial, unreported import: every row ends up counted in exactly one bucket.
+ *
+ * Rows commit with bounded concurrency rather than one at a time: each row's
+ * `commit()` is already its own independent transaction, and for hotels,
+ * coordinators and attendees `analyze` has already ruled out two rows in this
+ * batch sharing an identity, so each row only ever touches its own new row —
+ * running several at once changes nothing about validation, duplicate rules
+ * or the per-row atomicity guarantee above, it only overlaps the network
+ * round trips those independent transactions were already doing serially.
+ *
+ * Buses are the one exception, kept sequential (concurrency 1): two rows in
+ * the same file may legitimately name the *same* coordinatorPhone, and
+ * `assignBusCoordinator` moves that one coordinator onto whichever bus row
+ * assigns them last (the DB-unique one-bus-per-coordinator constraint) — a
+ * real cross-row dependency, not just an independent write, so the rows have
+ * to land in file order or that "last one wins" behavior isn't guaranteed
+ * (caught by `tests/integration/import.test.ts`'s own coverage of it).
  */
+const IMPORT_COMMIT_CONCURRENCY = 8; // stays under the DB pool size (10, src/lib/db/prisma.ts) with headroom for other traffic
+
 export async function commitImport(actor: Actor, entity: ImportEntity, sheet: ParsedSheet): Promise<ImportCommitResult> {
   requireImportPermission(actor, entity);
   const eventId = eventOf(actor);
@@ -336,23 +354,29 @@ export async function commitImport(actor: Actor, entity: ImportEntity, sheet: Pa
   let skippedDuplicate = rows.filter((r) => r.status === "duplicate").length;
   const failed: { row: number; message: string }[] = [];
 
-  for (const r of rows) {
-    if (r.status !== "valid") continue;
-    try {
-      const outcome = await r.commit();
-      if (outcome.kind === "created") created++;
-      else addedExisting++;
-    } catch (err) {
-      if (err instanceof AppError && err.code === "conflict") {
-        skippedDuplicate++;
-        continue;
+  const toCommit = rows.filter((r): r is Extract<InternalRow, { status: "valid" }> => r.status === "valid");
+  const concurrency = entity === "buses" ? 1 : IMPORT_COMMIT_CONCURRENCY;
+  let next = 0;
+  async function worker() {
+    while (next < toCommit.length) {
+      const r = toCommit[next++];
+      try {
+        const outcome = await r.commit();
+        if (outcome.kind === "created") created++;
+        else addedExisting++;
+      } catch (err) {
+        if (err instanceof AppError && err.code === "conflict") {
+          skippedDuplicate++;
+          continue;
+        }
+        failed.push({
+          row: r.row,
+          message: err instanceof AppError ? (err.reason ? `errors.reasons.${err.reason}` : `errors.${err.code}`) : "errors.generic",
+        });
       }
-      failed.push({
-        row: r.row,
-        message: err instanceof AppError ? (err.reason ? `errors.reasons.${err.reason}` : `errors.${err.code}`) : "errors.generic",
-      });
     }
   }
+  await Promise.all(Array.from({ length: Math.min(concurrency, toCommit.length) }, worker));
 
   return {
     entity,

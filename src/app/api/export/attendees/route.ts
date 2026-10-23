@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import ExcelJS from "exceljs";
 import { getApiUser } from "@/lib/auth/current-user";
 import { exportAttendees } from "@/server/services/people";
-import { toCsv } from "@/lib/csv";
+import { neutralizeFormula, toCsv } from "@/lib/csv";
 
 const HEADERS = ["name", "phone", "hotel", "zone", "gender", "address"];
 
@@ -18,7 +18,12 @@ export async function GET(req: NextRequest) {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Attendees");
     sheet.addRow(HEADERS);
-    for (const r of rows) sheet.addRow([r.name, r.phone, r.hotel, r.zone, r.gender, r.address]);
+    // XLSX cells are typed, so ExcelJS already writes these as text rather than
+    // formulas — neutralized anyway for defense-in-depth and consistency with
+    // the CSV path, which has no such type information to rely on.
+    for (const r of rows) {
+      sheet.addRow([r.name, r.phone, r.hotel, r.zone, r.gender, r.address].map(neutralizeFormula));
+    }
     const buffer = await workbook.xlsx.writeBuffer();
     return new Response(buffer, {
       headers: {

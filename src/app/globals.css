@@ -35,6 +35,16 @@ body:has(.login-bg) {
   background: transparent;
 }
 
+/* The shared header has no background of its own (it normally just sits on
+   the plain body background); over the login photo that leaves its text and
+   buttons low-contrast against whatever part of the image is behind them.
+   Scoped the same way as `.login-bg` above, so only this page is affected. */
+body:has(.login-bg) header {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+}
+
 :focus-visible {
   outline: 3px solid var(--color-brand);
   outline-offset: 2px;
