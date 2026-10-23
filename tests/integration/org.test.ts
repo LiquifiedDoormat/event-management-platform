@@ -11,7 +11,7 @@ const asActor = <T extends { eventId: string | null }>(u: T) => u;
 describe.skipIf(!hasTestDb)("org chart", () => {
   beforeEach(resetDb);
 
-  it("staff sees the whole hierarchy: cluster, its hotels, and each hotel's coordinator", async () => {
+  it("staff sees Admin -> Cluster Coordinator -> Hotels -> Coordinators, in that nesting", async () => {
     const owner = await staff("OWNER");
     const { eventId, hotelA, coordA } = await createTwoHotels();
     const north = await clusters.createCluster(owner, clusterInput.parse({ name: "North" }));
@@ -20,12 +20,41 @@ describe.skipIf(!hasTestDb)("org chart", () => {
     await clusters.addClusterCoordinator(owner, north.id, cc.id);
 
     const root = await getOrgChart(owner);
-    const clusterNode = root.children.find((c) => c.id === north.id);
-    expect(clusterNode?.role).toBe("CLUSTER_COORDINATOR");
-    expect(clusterNode?.children.some((c) => c.id === cc.id)).toBe(true);
-    const hotelNode = clusterNode?.children.find((c) => c.id === hotelA.id);
+    // The cluster coordinator PERSON is the node directly under the root
+    // (Admin level) — not a stand-in node for the cluster itself.
+    const ccNode = root.children.find((c) => c.id === cc.id);
+    expect(ccNode?.role).toBe("CLUSTER_COORDINATOR");
+    expect(root.children.some((c) => c.id === north.id)).toBe(false);
+    const hotelNode = ccNode?.children.find((c) => c.id === hotelA.id);
     expect(hotelNode?.role).toBe("HOTEL");
     expect(hotelNode?.children.some((c) => c.id === coordA.id)).toBe(true);
+  });
+
+  it("a cluster with two coordinators shows the same hotels nested under each one", async () => {
+    const owner = await staff("OWNER");
+    const { eventId, hotelA } = await createTwoHotels();
+    const north = await clusters.createCluster(owner, clusterInput.parse({ name: "North" }));
+    await clusters.addClusterHotel(owner, north.id, hotelA.id);
+    const cc1 = await createUser("CLUSTER_COORDINATOR", { eventId });
+    const cc2 = await createUser("CLUSTER_COORDINATOR", { eventId });
+    await clusters.addClusterCoordinator(owner, north.id, cc1.id);
+    await clusters.addClusterCoordinator(owner, north.id, cc2.id);
+
+    const root = await getOrgChart(owner);
+    for (const cc of [cc1, cc2]) {
+      const ccNode = root.children.find((c) => c.id === cc.id);
+      expect(ccNode?.children.some((h) => h.id === hotelA.id)).toBe(true);
+    }
+  });
+
+  it("a cluster with no coordinator still shows its hotels, directly under Admin", async () => {
+    const owner = await staff("OWNER");
+    const { hotelA } = await createTwoHotels();
+    const north = await clusters.createCluster(owner, clusterInput.parse({ name: "North" }));
+    await clusters.addClusterHotel(owner, north.id, hotelA.id);
+
+    const root = await getOrgChart(owner);
+    expect(root.children.some((c) => c.id === hotelA.id && c.role === "HOTEL")).toBe(true);
   });
 
   it("a cluster coordinator sees only their own cluster's branch, not other clusters", async () => {
@@ -40,7 +69,10 @@ describe.skipIf(!hasTestDb)("org chart", () => {
 
     const root = await getOrgChart(asActor({ ...cc, hotelId: null }));
     expect(root.children).toHaveLength(1);
-    expect(root.children[0].id).toBe(north.id);
+    // The top node is the coordinator themselves, not the cluster.
+    expect(root.children[0].id).toBe(cc.id);
+    expect(root.children[0].role).toBe("CLUSTER_COORDINATOR");
+    expect(root.children[0].children.some((c) => c.id === hotelA.id)).toBe(true);
     expect(root.children[0].children.some((c) => c.id === hotelB.id)).toBe(false);
   });
 
@@ -55,11 +87,12 @@ describe.skipIf(!hasTestDb)("org chart", () => {
 
     const root = await getOrgChart(asActor(coordA));
     expect(root.children).toHaveLength(1);
-    const clusterNode = root.children[0];
-    expect(clusterNode.id).toBe(north.id);
-    expect(clusterNode.children.some((c) => c.id === cc.id)).toBe(true);
-    expect(clusterNode.children.some((c) => c.id === hotelA.id)).toBe(true);
-    expect(clusterNode.children.some((c) => c.id === hotelB.id)).toBe(false);
+    // The top node is the cluster coordinator above their hotel, not the cluster.
+    const ccNode = root.children[0];
+    expect(ccNode.id).toBe(cc.id);
+    expect(ccNode.role).toBe("CLUSTER_COORDINATOR");
+    expect(ccNode.children.some((c) => c.id === hotelA.id)).toBe(true);
+    expect(ccNode.children.some((c) => c.id === hotelB.id)).toBe(false);
   });
 
   it("a customer has no org chart to see", async () => {

@@ -43,6 +43,20 @@ const hotelSelect = {
 };
 
 /**
+ * Nests `hotels` under each of `coordinators` (so a cluster with two cluster
+ * coordinators shows the same hotels under each — the real assignment is
+ * cluster-to-hotel and cluster-to-coordinator, not coordinator-to-hotel, so
+ * every coordinator of that cluster is equally "over" all of it). A cluster
+ * with no coordinator assigned has nothing to nest its hotels under, so they
+ * surface at the same level the coordinator node would have been — never
+ * dropped, never invented a coordinator for them.
+ */
+function underCoordinators(coordinators: Person[], hotels: OrgNode[]): OrgNode[] {
+  if (coordinators.length === 0) return hotels;
+  return coordinators.map((p) => ({ ...leaf(p, "CLUSTER_COORDINATOR"), children: hotels }));
+}
+
+/**
  * The hierarchy visible to `actor`, rooted at the highest post they may see:
  * - Owner/Admin: the whole event — every cluster (and unclustered hotels)
  *   down to each hotel's coordinators.
@@ -76,13 +90,7 @@ export async function getOrgChart(actor: Actor): Promise<OrgNode> {
     ]);
     root.children = [
       ...admins.map((a) => leaf(a, a.role)),
-      ...clusters.map((c) => ({
-        id: c.id,
-        name: c.name,
-        phone: null,
-        role: "CLUSTER_COORDINATOR" as const,
-        children: [...c.members.map((m) => leaf(m.user, "CLUSTER_COORDINATOR")), ...c.hotels.map(hotelNode)],
-      })),
+      ...clusters.flatMap((c) => underCoordinators(c.members.map((m) => m.user), c.hotels.map(hotelNode))),
       ...unclustered.map(hotelNode),
     ];
     return root;
@@ -91,12 +99,17 @@ export async function getOrgChart(actor: Actor): Promise<OrgNode> {
   if (actor.role === "CLUSTER_COORDINATOR") {
     const membership = await prisma.eventMember.findUnique({ where: { eventId_userId: { eventId, userId: actor.id } }, select: { clusterId: true } });
     if (!membership?.clusterId) return root;
-    const cluster = await prisma.cluster.findFirst({
-      where: { id: membership.clusterId, eventId },
-      select: { id: true, name: true, hotels: { where: { isActive: true }, orderBy: { name: "asc" }, select: hotelSelect } },
-    });
-    if (!cluster) return root;
-    root.children = [{ id: cluster.id, name: cluster.name, phone: null, role: "CLUSTER_COORDINATOR", children: cluster.hotels.map(hotelNode) }];
+    const [self, cluster] = await Promise.all([
+      prisma.user.findUnique({ where: { id: actor.id }, select: { id: true, name: true, phone: true } }),
+      prisma.cluster.findFirst({
+        where: { id: membership.clusterId, eventId },
+        select: { id: true, hotels: { where: { isActive: true }, orderBy: { name: "asc" }, select: hotelSelect } },
+      }),
+    ]);
+    if (!cluster || !self) return root;
+    // Their own restricted view: themselves (the actual coordinator, not the
+    // cluster as a stand-in) expanding to their cluster's hotels.
+    root.children = [{ ...leaf(self, "CLUSTER_COORDINATOR"), children: cluster.hotels.map(hotelNode) }];
     return root;
   }
 
@@ -115,13 +128,12 @@ export async function getOrgChart(actor: Actor): Promise<OrgNode> {
     }
     const cluster = await prisma.cluster.findFirst({
       where: { id: hotel.clusterId, eventId },
-      select: { id: true, name: true, members: { where: { user: { role: "CLUSTER_COORDINATOR", status: "ACTIVE" } }, select: { user: { select: { id: true, name: true, phone: true } } } } },
+      select: { members: { where: { user: { role: "CLUSTER_COORDINATOR", status: "ACTIVE" } }, select: { user: { select: { id: true, name: true, phone: true } } } } },
     });
-    if (!cluster) {
-      root.children = [node];
-      return root;
-    }
-    root.children = [{ id: cluster.id, name: cluster.name, phone: null, role: "CLUSTER_COORDINATOR", children: [...cluster.members.map((m) => leaf(m.user, "CLUSTER_COORDINATOR")), node] }];
+    // Only their own hotel is nested here (never a sibling hotel of the same
+    // cluster) — same restriction the rest of the app already enforces for
+    // a hotel coordinator's visibility.
+    root.children = underCoordinators(cluster?.members.map((m) => m.user) ?? [], [node]);
     return root;
   }
 
