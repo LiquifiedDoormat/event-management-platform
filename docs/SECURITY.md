@@ -53,16 +53,17 @@ Hotel Coordinator and Cluster Coordinator below are both stored as `Role` values
 | Deactivate / reactivate events | ✅ | — | — | — | — |
 | Reset PIN (clear it; chosen again at next sign-in) | Admins, both coordinator roles | both coordinator roles | — | — | — |
 | Search attendees of own hotel(s) in current event | ✅ (People) | ✅ (People) | ✅ (own cluster) | ✅ | — |
-| Start/end trips | ✅ | ✅ | — | own designated buses | — |
-| Change bus status | ✅ (correction) | ✅ (correction) | — | own active trip | — |
-| Send GPS location | — | — | — | own active trip only | — |
+| Start/end trips (incl. status correction) | ✅ | ✅ | any bus in own cluster (as a correction) | own designated buses | — |
+| Change bus status | ✅ (correction) | ✅ (correction) | any bus in own cluster (as a correction) | own active trip | — |
+| Send GPS location | — | — | any bus in own cluster | own active trip only | — |
 | View hotel details, its coordinators (name + phone), its buses | ✅ | ✅ | every hotel in own cluster | own hotel only | own hotel only |
 | View a person's details | everyone | everyone | self + attendees/hotel-coordinators of own cluster's hotels | self + attendees of own hotel | self only |
 | View a person's **postal address** (PII, narrower than the row above) | ✅ | ✅ | — | — | self only |
-| Create/manage zones and gates; bulk/individual attendee zone assignment | ✅ | ✅ | — | — | — |
+| Create/manage zones and gates | ✅ | ✅ | — | — | — |
+| Bulk/individual attendee zone or room assignment | ✅ | ✅ | attendees of own cluster's hotels | — | — |
 | View/edit own zone assignment | — | — | — | — | view only |
-| Record venue check-in/check-out | ✅ | ✅ | — | — | — |
-| Record bus boarding/departure (attendance) | ✅ (any bus) | ✅ (any bus) | — | own designated bus(es) only | — |
+| Record venue check-in/check-out | ✅ | ✅ | attendees of own cluster's hotels | — | — |
+| Record bus boarding/departure (attendance); create/edit attendance sessions | ✅ (any bus) | ✅ (any bus) | any bus in own cluster | own designated bus(es) only | — |
 | View airport-style ops board (`/ops`, all buses) | ✅ | ✅ | — | — | — |
 | View CSV export of attendees (incl. address) | ✅ | ✅ | — | — | — |
 

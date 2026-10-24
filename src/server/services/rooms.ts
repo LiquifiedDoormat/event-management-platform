@@ -2,7 +2,8 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import type { RoomInput } from "@/lib/validation/entities";
-import { can, type Actor } from "@/server/policies";
+import { can, canManageRoomAssignment, isStaff, type Actor } from "@/server/policies";
+import { loadScope } from "@/server/policies/scope";
 import { AppError, conflict, forbidden, isUniqueViolation, notFound } from "@/server/errors";
 import { audit } from "./audit";
 import { eventOf } from "./context";
@@ -21,9 +22,11 @@ async function requireHotel(eventId: string, hotelId: string) {
   if (!hotel) throw notFound();
 }
 
-/** A hotel's room inventory, each with its current occupancy. */
+/** A hotel's room inventory, each with its current occupancy — staff, or a cluster coordinator for a hotel in their cluster. */
 export async function listRooms(actor: Actor, hotelId: string) {
-  requireCan(actor, "dashboard.viewAll");
+  if (!can(actor, "dashboard.viewAll")) {
+    if (actor.role !== "CLUSTER_COORDINATOR" || !(await loadScope(actor)).hotelIds.has(hotelId)) throw forbidden();
+  }
   const eventId = eventOf(actor);
   await requireHotel(eventId, hotelId);
   const rows = await prisma.room.findMany({
@@ -100,14 +103,15 @@ async function lockRoomRemaining(tx: Prisma.TransactionClient, roomId: string, h
  * hotel's room.
  */
 export async function setPersonRoom(actor: Actor, userId: string, roomId: string | null) {
-  requireCan(actor, "room.manageAssignments");
   const eventId = eventOf(actor);
+  const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
   return prisma.$transaction(async (tx) => {
     const membership = await tx.eventMember.findFirst({
       where: { eventId, userId, user: { role: "CUSTOMER" } },
       select: { id: true, hotelId: true, roomId: true },
     });
     if (!membership) throw notFound();
+    if (!canManageRoomAssignment(actor, scope, membership)) throw forbidden();
     if (roomId && roomId !== membership.roomId) {
       if (!membership.hotelId) throw new AppError("invalid", "notAttendee");
       const remaining = await lockRoomRemaining(tx, roomId, membership.hotelId);

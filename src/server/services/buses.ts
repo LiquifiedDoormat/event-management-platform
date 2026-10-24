@@ -2,7 +2,8 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import type { BusInput, StopInput } from "@/lib/validation/entities";
-import { can, type Actor } from "@/server/policies";
+import { can, canViewBus, type Actor } from "@/server/policies";
+import { loadScope } from "@/server/policies/scope";
 import { AppError, conflict, forbidden, isUniqueViolation, notFound } from "@/server/errors";
 import { audit } from "./audit";
 import { pageArgs, toPage } from "./pagination";
@@ -68,8 +69,14 @@ export async function listBuses(
   return toPage(rows);
 }
 
+/**
+ * The full bus-management view: staff see any bus, a cluster coordinator any
+ * bus in their cluster (view plus the operational actions `can`/`canStartTrip`
+ * etc. separately gate on this page) — never a hotel coordinator, who has no
+ * page for other coordinators' buses.
+ */
 export async function getBus(actor: Actor, id: string) {
-  requireCan(actor, "dashboard.viewAll");
+  if (!can(actor, "dashboard.viewAll") && actor.role !== "CLUSTER_COORDINATOR") throw forbidden();
   const bus = await prisma.bus.findFirst({
     where: { id, hotel: { eventId: eventOf(actor) } },
     select: {
@@ -80,6 +87,7 @@ export async function getBus(actor: Actor, id: string) {
       isActive: true,
       createdAt: true,
       updatedAt: true,
+      hotelId: true,
       hotel: { select: { id: true, name: true } },
       coordinator: { select: { id: true, name: true, phone: true } },
       stops: {
@@ -95,6 +103,7 @@ export async function getBus(actor: Actor, id: string) {
     },
   });
   if (!bus) throw notFound();
+  if (actor.role === "CLUSTER_COORDINATOR" && !canViewBus(actor, await loadScope(actor), bus)) throw forbidden();
   return bus;
 }
 

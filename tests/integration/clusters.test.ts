@@ -90,7 +90,7 @@ describe.skipIf(!hasTestDb)("cluster service", () => {
 describe.skipIf(!hasTestDb)("cluster coordinator scope and visibility", () => {
   beforeEach(resetDb);
 
-  it("sees every hotel in their cluster, view only (no operable buses)", async () => {
+  it("sees every hotel in their cluster, and operates every active bus in it (but none outside it)", async () => {
     const owner = await staff("OWNER");
     const eventId = owner.eventId!;
     const { hotelA, hotelB, busA, busB, guestA } = await createTwoHotels(eventId);
@@ -102,7 +102,10 @@ describe.skipIf(!hasTestDb)("cluster coordinator scope and visibility", () => {
     const scope = await loadScope(cc);
     expect(scope.hotelIds.has(hotelA.id)).toBe(true);
     expect(scope.hotelIds.has(hotelB.id)).toBe(false);
-    expect(scope.operableBusIds.size).toBe(0);
+    // Same operational reach as a hotel coordinator, but across the whole
+    // cluster rather than one designated bus — they have none of their own.
+    expect(scope.operableBusIds.has(busA.id)).toBe(true);
+    expect(scope.operableBusIds.has(busB.id)).toBe(false);
     expect(canViewHotel(cc, scope, hotelA.id)).toBe(true);
     expect(canViewHotel(cc, scope, hotelB.id)).toBe(false);
     expect(canViewBus(cc, scope, busA)).toBe(true);

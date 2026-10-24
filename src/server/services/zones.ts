@@ -2,7 +2,8 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import type { GateInput, ZoneInput } from "@/lib/validation/entities";
-import { can, type Actor } from "@/server/policies";
+import { can, canManageZoneAssignment, isStaff, type Actor } from "@/server/policies";
+import { loadScope } from "@/server/policies/scope";
 import { conflict, forbidden, notFound } from "@/server/errors";
 import { audit } from "./audit";
 import { OPTIONS_LIMIT, PAGE_SIZE, toPage } from "./pagination";
@@ -151,14 +152,15 @@ async function lockZoneRemaining(tx: Prisma.TransactionClient, zoneId: string, e
 
 /** Single-attendee zone assignment (or clearing it with `zoneId: null`). */
 export async function setPersonZone(actor: Actor, userId: string, zoneId: string | null) {
-  requireCan(actor, "zone.manageAssignments");
   const eventId = eventOf(actor);
+  const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
   return prisma.$transaction(async (tx) => {
     const membership = await tx.eventMember.findFirst({
       where: { eventId, userId, user: { role: "CUSTOMER" } },
-      select: { id: true, zoneId: true },
+      select: { id: true, zoneId: true, hotelId: true },
     });
     if (!membership) throw notFound();
+    if (!canManageZoneAssignment(actor, scope, membership)) throw forbidden();
     // Already there, or just clearing: no capacity check needed either way.
     if (zoneId && zoneId !== membership.zoneId) {
       const remaining = await lockZoneRemaining(tx, zoneId, eventId);
@@ -182,7 +184,15 @@ export async function setPersonZone(actor: Actor, userId: string, zoneId: string
  * fills it the same capacity-aware way with the new group.
  */
 export async function bulkAssignZone(actor: Actor, opts: { zoneId: string; hotelId?: string; mode: "add" | "replace" }) {
-  requireCan(actor, "zone.manageAssignments");
+  // A cluster coordinator may only bulk-assign within one of their own
+  // cluster's hotels (never the whole event, unlike staff), so a hotelId is
+  // mandatory for them specifically.
+  if (actor.role === "CLUSTER_COORDINATOR") {
+    const scope = await loadScope(actor);
+    if (!opts.hotelId || !scope.hotelIds.has(opts.hotelId)) throw forbidden();
+  } else {
+    requireCan(actor, "zone.manageAssignments");
+  }
   const eventId = eventOf(actor);
   return prisma.$transaction(async (tx) => {
     if (opts.hotelId) {
@@ -290,9 +300,9 @@ export async function hotelZoneBreakdown(actor: Actor, hotelId: string) {
     .sort((a, b) => (a.zoneName ?? "").localeCompare(b.zoneName ?? ""));
 }
 
-/** Zones for dropdowns (active only). */
+/** Zones for dropdowns (active only) — staff, or a cluster coordinator picking a zone for their own cluster's attendees. */
 export async function zoneOptions(actor: Actor) {
-  requireCan(actor, "dashboard.viewAll");
+  if (!can(actor, "dashboard.viewAll") && actor.role !== "CLUSTER_COORDINATOR") throw forbidden();
   return prisma.zone.findMany({
     where: { isActive: true, eventId: eventOf(actor) },
     orderBy: { name: "asc" },

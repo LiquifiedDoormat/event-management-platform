@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignableRoles, can, canChangeStatus, canEditPerson, canViewPerson, type Action, type Actor, type Scope } from "@/server/policies";
+import { assignableRoles, can, canChangeStatus, canEditPerson, canStartTrip, canViewPerson, type Action, type Actor, type Scope } from "@/server/policies";
 
 const owner: Actor = { id: "o", role: "OWNER", hotelId: null };
 const admin: Actor = { id: "a", role: "ADMIN", hotelId: null };
@@ -76,18 +76,28 @@ describe("cluster coordinator visibility", () => {
     expect(canViewPerson(clusterCoord, scope, { id: "unassigned", role: "CUSTOMER", hotelId: null })).toBe(false);
   });
 
-  it("never operates buses (view only)", () => {
-    expect(scope.operableBusIds.size).toBe(0);
+  it("gets the same operational actions as a hotel coordinator across its own cluster's buses", () => {
+    const withBus: Scope = { hotelIds: new Set(["h1"]), operableBusIds: new Set(["b1"]) };
+    expect(canStartTrip(clusterCoord, withBus, "b1")).toBe(true);
+    expect(canStartTrip(clusterCoord, withBus, "other-bus")).toBe(false);
+    expect(canStartTrip(clusterCoord, scope, "b1")).toBe(false); // not in this cluster's scope
   });
 });
 
 describe("bus status changes", () => {
-  const trip = { coordinatorId: "c", endedAt: null };
+  const emptyScope: Scope = { hotelIds: new Set(), operableBusIds: new Set() };
+  const trip = { busId: "b1", coordinatorId: "c", endedAt: null };
   it("allows the trip coordinator and staff corrections only", () => {
-    expect(canChangeStatus(coord, trip)).toBe(true);
-    expect(canChangeStatus({ ...coord, id: "other" }, trip)).toBe(false);
-    expect(canChangeStatus(admin, trip)).toBe(true);
-    expect(canChangeStatus(guest, trip)).toBe(false);
-    expect(canChangeStatus(coord, { ...trip, endedAt: new Date() })).toBe(false);
+    expect(canChangeStatus(coord, emptyScope, trip)).toBe(true);
+    expect(canChangeStatus({ ...coord, id: "other" }, emptyScope, trip)).toBe(false);
+    expect(canChangeStatus(admin, emptyScope, trip)).toBe(true);
+    expect(canChangeStatus(guest, emptyScope, trip)).toBe(false);
+    expect(canChangeStatus(coord, emptyScope, { ...trip, endedAt: new Date() })).toBe(false);
+  });
+
+  it("also allows a cluster coordinator correcting a trip within their own cluster's buses", () => {
+    const withBus: Scope = { hotelIds: new Set(), operableBusIds: new Set(["b1"]) };
+    expect(canChangeStatus(clusterCoord, withBus, trip)).toBe(true);
+    expect(canChangeStatus(clusterCoord, emptyScope, trip)).toBe(false);
   });
 });

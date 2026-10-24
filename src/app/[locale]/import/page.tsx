@@ -9,7 +9,7 @@ export default async function ImportPage({ params }: PageProps<"/[locale]/import
   setRequestLocale(locale);
   const user = await requireStaff(locale);
   const t = await getTranslations("import");
-  const allowedEntities: ImportEntity[] = IMPORT_ENTITIES.filter((e) => e !== "coordinators" || user.role === "OWNER");
+  const allowedEntities: ImportEntity[] = IMPORT_ENTITIES.filter((e) => (e !== "coordinators" && e !== "clusterCoordinators") || user.role === "OWNER");
 
   return (
     <section className="flex flex-col gap-5">

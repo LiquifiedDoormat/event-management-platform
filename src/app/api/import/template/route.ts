@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
 
   const entity = new URL(req.url).searchParams.get("entity") as ImportEntity | null;
   if (!entity || !IMPORT_ENTITIES.includes(entity)) return new Response("Not found", { status: 404 });
-  if (entity === "coordinators" && user.role !== "OWNER") return new Response("Not found", { status: 404 });
+  if ((entity === "coordinators" || entity === "clusterCoordinators") && user.role !== "OWNER") return new Response("Not found", { status: 404 });
 
   return new Response(toCsv(templateRows(entity)), {
     headers: {

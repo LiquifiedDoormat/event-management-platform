@@ -12,10 +12,12 @@ export type Actor = { id: string; role: Role; hotelId?: string | null; eventId?:
 
 /**
  * What a non-staff user is allowed to see/operate, loaded by `loadScope`.
- * A hotel coordinator's scope is their one hotel; a cluster coordinator's is
- * every hotel in their cluster (view only — see canStartTrip/canSendLocation,
- * which stay keyed to `operableBusIds` and so never include a cluster
- * coordinator, who has no buses of their own).
+ * A hotel coordinator's scope is their one hotel, `operableBusIds` their own
+ * designated bus(es). A cluster coordinator's scope is every hotel in their
+ * cluster, with `operableBusIds` covering every active bus across those
+ * hotels — not just one of their own, since they have none — giving them the
+ * same operational actions (trip management, boarding/attendance, GPS) as a
+ * hotel coordinator would have, but across their whole cluster.
  */
 export type Scope = {
   /** Hotels whose details, coordinators and buses the actor may view. */
@@ -196,25 +198,40 @@ export function canViewAddress(actor: Actor, targetId: string): boolean {
 // Transport
 // ---------------------------------------------------------------------------
 
-/** GPS updates come only from the coordinator on the bus's active trip. */
-export function canSendLocation(actor: Actor, trip: { coordinatorId: string; endedAt: Date | null }): boolean {
-  return trip.endedAt === null && actor.role === "COORDINATOR" && trip.coordinatorId === actor.id;
-}
-
-/** Status changes: the trip's coordinator, or staff making a correction. */
-export function canChangeStatus(actor: Actor, trip: { coordinatorId: string; endedAt: Date | null }): boolean {
+/**
+ * GPS updates: the coordinator on the bus's active trip, or a cluster
+ * coordinator standing in for any bus across their cluster (the same
+ * operational reach `operableBusIds` already gives them — see `loadScope`).
+ */
+export function canSendLocation(actor: Actor, scope: Scope, trip: { busId: string; coordinatorId: string; endedAt: Date | null }): boolean {
   if (trip.endedAt !== null) return false;
-  return can(actor, "trip.correctStatus") || (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id);
+  if (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id) return true;
+  return actor.role === "CLUSTER_COORDINATOR" && scope.operableBusIds.has(trip.busId);
 }
 
-/** Starting a trip: staff, or a coordinator for a bus they are designated to. */
+/**
+ * Status changes: the trip's coordinator, staff making a correction, or a
+ * cluster coordinator correcting any trip across their cluster (same
+ * audited "correction" treatment as a staff override, since they were never
+ * physically on the bus either).
+ */
+export function canChangeStatus(actor: Actor, scope: Scope, trip: { busId: string; coordinatorId: string; endedAt: Date | null }): boolean {
+  if (trip.endedAt !== null) return false;
+  if (can(actor, "trip.correctStatus") || (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id)) return true;
+  return actor.role === "CLUSTER_COORDINATOR" && scope.operableBusIds.has(trip.busId);
+}
+
+/**
+ * Starting/ending a trip: staff, a coordinator for a bus they are designated
+ * to, or a cluster coordinator for any bus in their cluster.
+ */
 export function canStartTrip(actor: Actor, scope: Scope, busId: string): boolean {
-  return can(actor, "trip.manage") || (actor.role === "COORDINATOR" && scope.operableBusIds.has(busId));
+  return can(actor, "trip.manage") || ((actor.role === "COORDINATOR" || actor.role === "CLUSTER_COORDINATOR") && scope.operableBusIds.has(busId));
 }
 
-/** Boarding/departure attendance events: staff, or a coordinator for a bus they operate. */
+/** Boarding/departure attendance events: staff, a coordinator for a bus they operate, or a cluster coordinator for any bus in their cluster. */
 export function canRecordBoarding(actor: Actor, scope: Scope, busId: string): boolean {
-  return can(actor, "trip.manage") || (actor.role === "COORDINATOR" && scope.operableBusIds.has(busId));
+  return can(actor, "trip.manage") || ((actor.role === "COORDINATOR" || actor.role === "CLUSTER_COORDINATOR") && scope.operableBusIds.has(busId));
 }
 
 /** Creating/editing an attendance session's records: same rule as recording boarding. */
@@ -240,4 +257,22 @@ export function canViewAttendanceSession(actor: Actor, scope: Scope, bus: { hote
 export function canEditMedicalNeeds(actor: Actor, scope: Scope, target: { id: string; role: Role; hotelId: string | null }): boolean {
   if (isStaff(actor) || actor.id === target.id) return true;
   return actor.role === "COORDINATOR" && target.role === "CUSTOMER" && target.hotelId !== null && scope.hotelIds.has(target.hotelId);
+}
+
+/** Venue check-in/out: staff, or a cluster coordinator for an attendee of a hotel in their cluster. */
+export function canCheckInOutAttendee(actor: Actor, scope: Scope, target: { hotelId: string | null }): boolean {
+  if (can(actor, "attendance.checkInOut")) return true;
+  return actor.role === "CLUSTER_COORDINATOR" && target.hotelId !== null && scope.hotelIds.has(target.hotelId);
+}
+
+/** Seating-zone assignment: staff, or a cluster coordinator for an attendee of a hotel in their cluster. */
+export function canManageZoneAssignment(actor: Actor, scope: Scope, target: { hotelId: string | null }): boolean {
+  if (can(actor, "zone.manageAssignments")) return true;
+  return actor.role === "CLUSTER_COORDINATOR" && target.hotelId !== null && scope.hotelIds.has(target.hotelId);
+}
+
+/** Room assignment: staff, or a cluster coordinator for an attendee of a hotel in their cluster. */
+export function canManageRoomAssignment(actor: Actor, scope: Scope, target: { hotelId: string | null }): boolean {
+  if (can(actor, "room.manageAssignments")) return true;
+  return actor.role === "CLUSTER_COORDINATOR" && target.hotelId !== null && scope.hotelIds.has(target.hotelId);
 }

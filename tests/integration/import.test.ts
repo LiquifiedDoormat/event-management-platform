@@ -252,6 +252,124 @@ describe.skipIf(!hasTestDb)("bulk import", () => {
     });
   });
 
+  describe("cluster coordinators and the Cluster column", () => {
+    it("rejects clusterCoordinators import from an Admin (Owner only)", async () => {
+      const admin = await staff("ADMIN");
+      await expect(
+        commitImport(admin, "clusterCoordinators", sheet(["name", "phone", "cluster"], [["Rohan Mehta", "9876500100", "North"]])),
+      ).rejects.toBeInstanceOf(AppError);
+    });
+
+    it("coordinators import: an optional Cluster column auto-creates the cluster and assigns the row's hotel to it", async () => {
+      const { eventId, hotelA } = await createTwoHotels();
+      const owner = await staff("OWNER", eventId);
+      const data = sheet(["name", "phone", "hotelName", "cluster"], [["Asha Rao", "9876500101", "Hotel A", "North Zone"]]);
+      const result = await commitImport(owner, "coordinators", data);
+      expect(result).toMatchObject({ created: 1, invalidRows: 0, failed: [] });
+      const cluster = await prisma.cluster.findFirst({ where: { eventId, name: "North Zone" } });
+      expect(cluster).not.toBeNull();
+      const hotel = await prisma.hotel.findUnique({ where: { id: hotelA.id }, select: { clusterId: true } });
+      expect(hotel?.clusterId).toBe(cluster!.id);
+    });
+
+    it("clusterCoordinators import creates the cluster (if missing) and assigns the coordinator to it", async () => {
+      const owner = await staff("OWNER");
+      const eventId = owner.eventId!;
+      const data = sheet(["name", "phone", "cluster"], [["Rohan Mehta", "9876500102", "South Zone"]]);
+      const result = await commitImport(owner, "clusterCoordinators", data);
+      expect(result).toMatchObject({ created: 1, invalidRows: 0, failed: [] });
+      const cluster = await prisma.cluster.findFirst({ where: { eventId, name: "South Zone" } });
+      expect(cluster).not.toBeNull();
+      const person = await prisma.user.findFirst({ where: { phone: "+919876500102" }, select: { id: true } });
+      const membership = await prisma.eventMember.findUnique({
+        where: { eventId_userId: { eventId, userId: person!.id } },
+        select: { clusterId: true },
+      });
+      expect(membership?.clusterId).toBe(cluster!.id);
+    });
+
+    it("either import order reuses the same cluster by name instead of creating a duplicate (coordinators first)", async () => {
+      const { eventId, hotelA } = await createTwoHotels();
+      const owner = await staff("OWNER", eventId);
+      await commitImport(owner, "coordinators", sheet(["name", "phone", "hotelName", "cluster"], [["Asha Rao", "9876500103", "Hotel A", "East Zone"]]));
+      await commitImport(owner, "clusterCoordinators", sheet(["name", "phone", "cluster"], [["Rohan Mehta", "9876500104", "East Zone"]]));
+
+      const clustersFound = await prisma.cluster.findMany({ where: { eventId, name: "East Zone" } });
+      expect(clustersFound).toHaveLength(1);
+      const hotel = await prisma.hotel.findUnique({ where: { id: hotelA.id }, select: { clusterId: true } });
+      expect(hotel?.clusterId).toBe(clustersFound[0].id);
+      const cc = await prisma.user.findFirst({ where: { phone: "+919876500104" }, select: { id: true } });
+      const membership = await prisma.eventMember.findUnique({
+        where: { eventId_userId: { eventId, userId: cc!.id } },
+        select: { clusterId: true },
+      });
+      expect(membership?.clusterId).toBe(clustersFound[0].id);
+    });
+
+    it("either import order reuses the same cluster by name instead of creating a duplicate (cluster coordinators first)", async () => {
+      const { eventId, hotelA } = await createTwoHotels();
+      const owner = await staff("OWNER", eventId);
+      await commitImport(owner, "clusterCoordinators", sheet(["name", "phone", "cluster"], [["Rohan Mehta", "9876500105", "West Zone"]]));
+      await commitImport(owner, "coordinators", sheet(["name", "phone", "hotelName", "cluster"], [["Asha Rao", "9876500106", "Hotel A", "West Zone"]]));
+
+      const clustersFound = await prisma.cluster.findMany({ where: { eventId, name: "West Zone" } });
+      expect(clustersFound).toHaveLength(1);
+      const hotel = await prisma.hotel.findUnique({ where: { id: hotelA.id }, select: { clusterId: true } });
+      expect(hotel?.clusterId).toBe(clustersFound[0].id);
+    });
+
+    it("requires a cluster coordinator row to name a cluster", async () => {
+      const owner = await staff("OWNER");
+      const preview = await previewImport(owner, "clusterCoordinators", sheet(["name", "phone", "cluster"], [["Rohan Mehta", "9876500107", ""]]));
+      expect(preview.rows[0]).toMatchObject({ status: "invalid", issues: [{ field: "cluster", key: "required" }] });
+    });
+
+    it("rejects a coordinator row naming a cluster but no hotel", async () => {
+      const owner = await staff("OWNER");
+      const preview = await previewImport(owner, "coordinators", sheet(["name", "phone", "hotelName", "cluster"], [["Asha Rao", "9876500108", "", "North Zone"]]));
+      expect(preview.rows[0]).toMatchObject({ status: "invalid", issues: [{ field: "cluster", key: "clusterRequiresHotel" }] });
+    });
+
+    it("flags conflicting clusters for the same hotel within one coordinators file", async () => {
+      await createTwoHotels();
+      const owner = await staff("OWNER");
+      const data = sheet(
+        ["name", "phone", "hotelName", "cluster"],
+        [
+          ["Asha Rao", "9876500109", "Hotel A", "North Zone"],
+          ["Priya Nair", "9876500110", "Hotel A", "South Zone"],
+        ],
+      );
+      const preview = await previewImport(owner, "coordinators", data);
+      expect(preview.rows[0].status).toBe("valid");
+      expect(preview.rows[1]).toMatchObject({ status: "invalid", issues: [{ field: "cluster", key: "conflictingAssignment" }] });
+    });
+
+    it("flags conflicting clusters for the same cluster-coordinator phone within one file", async () => {
+      const owner = await staff("OWNER");
+      const data = sheet(
+        ["name", "phone", "cluster"],
+        [
+          ["Rohan Mehta", "9876500111", "North Zone"],
+          ["Rohan Mehta", "9876500111", "South Zone"],
+        ],
+      );
+      const preview = await previewImport(owner, "clusterCoordinators", data);
+      expect(preview.rows[0].status).toBe("valid");
+      expect(preview.rows[1]).toMatchObject({ status: "invalid", issues: [{ field: "cluster", key: "conflictingAssignment" }] });
+    });
+
+    it("skips re-importing the same active cluster coordinator as a duplicate", async () => {
+      const owner = await staff("OWNER");
+      const eventId = owner.eventId!;
+      const data = sheet(["name", "phone", "cluster"], [["Rohan Mehta", "9876500112", "North Zone"]]);
+      await commitImport(owner, "clusterCoordinators", data);
+      const result = await commitImport(owner, "clusterCoordinators", data);
+      expect(result).toMatchObject({ created: 0, skippedDuplicate: 1 });
+      expect(await prisma.cluster.count({ where: { eventId, name: "North Zone" } })).toBe(1);
+    });
+  });
+
   describe("authorization and event isolation", () => {
     it("denies a coordinator actor entirely", async () => {
       const coordinator = await createUser("COORDINATOR");

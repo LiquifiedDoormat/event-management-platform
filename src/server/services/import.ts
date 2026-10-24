@@ -8,9 +8,11 @@ import { AppError, forbidden } from "@/server/errors";
 import { IMPORT_COLUMNS, type ImportEntity } from "@/lib/import/entities";
 import { ImportError } from "@/lib/import/errors";
 import type { ParsedSheet } from "@/lib/import/parse";
+import { audit } from "./audit";
 import { eventOf } from "./context";
 import { addHotelCoordinator, createHotel } from "./hotels";
 import { assignBusCoordinator, createBus } from "./buses";
+import { addClusterCoordinator, addClusterHotel } from "./clusters";
 import { createPerson } from "./people";
 
 // Bulk import: every row is validated the same way whether it's only being
@@ -66,6 +68,7 @@ function requireImportPermission(actor: Actor, entity: ImportEntity) {
   if (entity === "hotels" && !can(actor, "hotel.create")) throw forbidden();
   if (entity === "buses" && !can(actor, "bus.create")) throw forbidden();
   if (entity === "coordinators" && !assignableRoles(actor).includes("COORDINATOR")) throw forbidden();
+  if (entity === "clusterCoordinators" && !assignableRoles(actor).includes("CLUSTER_COORDINATOR")) throw forbidden();
   if (entity === "attendees" && !assignableRoles(actor).includes("CUSTOMER")) throw forbidden();
 }
 
@@ -100,6 +103,37 @@ async function resolveHotelMap(eventId: string, names: string[]) {
     select: { id: true, name: true, isActive: true },
   });
   for (const h of hotels) map.set(h.name.trim().toLowerCase(), { id: h.id, isActive: h.isActive });
+  return map;
+}
+
+/**
+ * Clusters named by `names` (case-insensitive, trimmed), keyed by lower-cased
+ * name. With `create: true`, any name not already in the event is created —
+ * resolved once per import run (not per row) so two rows naming the same new
+ * cluster share it instead of racing each other into duplicate rows. With
+ * `create: false` (preview), an unmatched name simply resolves to no id: the
+ * row is still valid, the cluster will be created at commit time.
+ */
+async function resolveClusterMap(actor: Actor, eventId: string, names: string[], opts: { create: boolean }): Promise<Map<string, string>> {
+  const wanted = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+  const map = new Map<string, string>();
+  if (!wanted.length) return map;
+  const existing = await prisma.cluster.findMany({
+    where: { eventId, OR: wanted.map((name) => ({ name: { equals: name, mode: "insensitive" as const } })) },
+    select: { id: true, name: true },
+  });
+  for (const c of existing) map.set(c.name.trim().toLowerCase(), c.id);
+  if (!opts.create) return map;
+  for (const name of wanted) {
+    const key = name.toLowerCase();
+    if (map.has(key)) continue;
+    const id = await prisma.$transaction(async (tx) => {
+      const cluster = await tx.cluster.create({ data: { eventId, name }, select: { id: true } });
+      await audit(tx, actor, "cluster.create", "Cluster", cluster.id, { name, source: "import" });
+      return cluster.id;
+    });
+    map.set(key, id);
+  }
   return map;
 }
 
@@ -212,16 +246,39 @@ async function analyzeBuses(actor: Actor, eventId: string, sheet: ParsedSheet): 
 }
 
 const importPersonRow = z.object({ name: requiredText(120), phone });
+const importClusterCoordinatorRow = z.object({ name: requiredText(120), phone, cluster: requiredText(120) });
 
-async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, role: "COORDINATOR" | "CUSTOMER"): Promise<InternalRow[]> {
-  const entity: ImportEntity = role === "COORDINATOR" ? "coordinators" : "attendees";
+type PersonImportRole = "COORDINATOR" | "CUSTOMER" | "CLUSTER_COORDINATOR";
+
+/**
+ * Shared analyzer for coordinators, attendees and cluster coordinators —
+ * same identity/duplicate rules throughout, with per-role extras: a
+ * coordinator row may optionally name a `cluster` (groups the row's *hotel*
+ * into that cluster, auto-creating it); a cluster-coordinator row requires
+ * one (assigns the *person* to that cluster, auto-creating it too). `write`
+ * is false for a read-only preview (an unresolved cluster name is still
+ * valid — it will be created at commit) and true for the actual commit
+ * (every named cluster is resolved/created once, up front, before any row's
+ * `commit()` can run — see `resolveClusterMap`).
+ */
+async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, role: PersonImportRole, write: boolean): Promise<InternalRow[]> {
+  const entity: ImportEntity = role === "COORDINATOR" ? "coordinators" : role === "CLUSTER_COORDINATOR" ? "clusterCoordinators" : "attendees";
   checkColumns(sheet.headers, entity);
   const columns = [...IMPORT_COLUMNS[entity].required, ...IMPORT_COLUMNS[entity].optional];
   const objs = sheet.rows.map((row) => rowObject(sheet.headers, row, columns));
 
-  const parsedRows = objs.map((obj) => importPersonRow.safeParse({ name: obj.name, phone: obj.phone }));
+  const rowSchema = role === "CLUSTER_COORDINATOR" ? importClusterCoordinatorRow : importPersonRow;
+  const parsedRows = objs.map((obj) =>
+    rowSchema.safeParse(role === "CLUSTER_COORDINATOR" ? { name: obj.name, phone: obj.phone, cluster: obj.cluster } : { name: obj.name, phone: obj.phone }),
+  );
   const candidatePhones = parsedRows.filter((p) => p.success).map((p) => (p.success ? p.data.phone : "")).filter(Boolean);
-  const hotelMap = await resolveHotelMap(eventId, objs.map((o) => o.hotelName ?? ""));
+  const hotelMap =
+    role !== "CLUSTER_COORDINATOR"
+      ? await resolveHotelMap(eventId, objs.map((o) => o.hotelName ?? ""))
+      : new Map<string, { id: string; isActive: boolean }>();
+  // Coordinators may optionally tag their hotel's cluster; cluster coordinators always name their own.
+  const clusterNames = role === "CUSTOMER" ? [] : objs.map((o) => o.cluster ?? "");
+  const clusterMap = await resolveClusterMap(actor, eventId, clusterNames, { create: write });
 
   const existing = candidatePhones.length
     ? await prisma.user.findMany({
@@ -232,24 +289,56 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
   // A phone no longer identifies one person on its own: for CUSTOMER rows,
   // several different guests may share it, so group by phone and match by
   // (phone, name) below rather than assuming the first/only hit is the row's
-  // identity. Coordinators keep the stricter one-identity-per-phone rule.
+  // identity. Coordinators and cluster coordinators keep the stricter
+  // one-identity-per-phone rule.
   const existingByPhone = new Map<string, typeof existing>();
   for (const u of existing) existingByPhone.set(u.phone, [...(existingByPhone.get(u.phone) ?? []), u]);
   const seenIdentities = new Set<string>();
+  // Within-file conflict guards: the same hotel named under two different
+  // clusters (coordinators import), or the same cluster-coordinator phone
+  // named under two different clusters (clusterCoordinators import) — both
+  // are a contradiction within one file, not an ordinary "move".
+  const hotelClusterInFile = new Map<string, string>();
+  const phoneClusterInFile = new Map<string, string>();
 
   return objs.map((obj, i): InternalRow => {
     const rowNum = i + 2;
     const parsed = parsedRows[i];
     if (!parsed.success) return { row: rowNum, status: "invalid", issues: zodIssues(parsed.error) };
     const { name, phone: normPhone } = parsed.data;
+    const clusterName = role === "CUSTOMER" ? "" : (obj.cluster ?? "").trim();
 
     let hotelId: string | null = null;
-    const hotelName = (obj.hotelName ?? "").trim();
-    if (hotelName) {
-      const hotel = hotelMap.get(hotelName.toLowerCase());
-      if (!hotel) return { row: rowNum, status: "invalid", issues: [{ field: "hotelName", key: "hotelNotFound" }] };
-      if (!hotel.isActive) return { row: rowNum, status: "invalid", issues: [{ field: "hotelName", key: "hotelInactive" }] };
-      hotelId = hotel.id;
+    if (role !== "CLUSTER_COORDINATOR") {
+      const hotelName = (obj.hotelName ?? "").trim();
+      if (hotelName) {
+        const hotel = hotelMap.get(hotelName.toLowerCase());
+        if (!hotel) return { row: rowNum, status: "invalid", issues: [{ field: "hotelName", key: "hotelNotFound" }] };
+        if (!hotel.isActive) return { row: rowNum, status: "invalid", issues: [{ field: "hotelName", key: "hotelInactive" }] };
+        hotelId = hotel.id;
+      } else if (role === "COORDINATOR" && clusterName) {
+        return { row: rowNum, status: "invalid", issues: [{ field: "cluster", key: "clusterRequiresHotel" }] };
+      }
+    }
+
+    let clusterId: string | null = null;
+    if (clusterName) {
+      const key = clusterName.toLowerCase();
+      clusterId = clusterMap.get(key) ?? null;
+      if (role === "COORDINATOR" && hotelId) {
+        const seenCluster = hotelClusterInFile.get(hotelId);
+        if (seenCluster !== undefined && seenCluster !== key) {
+          return { row: rowNum, status: "invalid", issues: [{ field: "cluster", key: "conflictingAssignment" }] };
+        }
+        hotelClusterInFile.set(hotelId, key);
+      }
+      if (role === "CLUSTER_COORDINATOR") {
+        const seenCluster = phoneClusterInFile.get(normPhone);
+        if (seenCluster !== undefined && seenCluster !== key) {
+          return { row: rowNum, status: "invalid", issues: [{ field: "cluster", key: "conflictingAssignment" }] };
+        }
+        phoneClusterInFile.set(normPhone, key);
+      }
     }
 
     const identityKey = role === "CUSTOMER" ? `${normPhone}|${name.trim().toLowerCase()}` : normPhone;
@@ -274,7 +363,12 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
     return {
       row: rowNum,
       status: "valid",
-      display: { name, phone: normPhone, ...(hotelName ? { hotel: hotelName } : {}) },
+      display: {
+        name,
+        phone: normPhone,
+        ...(hotelId ? { hotel: (obj.hotelName ?? "").trim() } : {}),
+        ...(clusterName ? { cluster: clusterName } : {}),
+      },
       commit: async () => {
         const created = await createPerson(actor, {
           name,
@@ -285,17 +379,20 @@ async function analyzePeople(actor: Actor, eventId: string, sheet: ParsedSheet, 
           gender: gender || undefined,
         });
         if (role === "COORDINATOR" && hotelId) await addHotelCoordinator(actor, hotelId, created.id);
+        if (role === "COORDINATOR" && hotelId && clusterId) await addClusterHotel(actor, clusterId, hotelId);
+        if (role === "CLUSTER_COORDINATOR" && clusterId) await addClusterCoordinator(actor, clusterId, created.id);
         return created.addedExisting ? { kind: "addedExisting" } : { kind: "created" };
       },
     };
   });
 }
 
-function analyze(actor: Actor, entity: ImportEntity, eventId: string, sheet: ParsedSheet): Promise<InternalRow[]> {
+function analyze(actor: Actor, entity: ImportEntity, eventId: string, sheet: ParsedSheet, write: boolean): Promise<InternalRow[]> {
   if (entity === "hotels") return analyzeHotels(actor, eventId, sheet);
   if (entity === "buses") return analyzeBuses(actor, eventId, sheet);
-  if (entity === "coordinators") return analyzePeople(actor, eventId, sheet, "COORDINATOR");
-  return analyzePeople(actor, eventId, sheet, "CUSTOMER");
+  if (entity === "coordinators") return analyzePeople(actor, eventId, sheet, "COORDINATOR", write);
+  if (entity === "clusterCoordinators") return analyzePeople(actor, eventId, sheet, "CLUSTER_COORDINATOR", write);
+  return analyzePeople(actor, eventId, sheet, "CUSTOMER", write);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +403,7 @@ function analyze(actor: Actor, entity: ImportEntity, eventId: string, sheet: Par
 export async function previewImport(actor: Actor, entity: ImportEntity, sheet: ParsedSheet): Promise<ImportPreview> {
   requireImportPermission(actor, entity);
   const eventId = eventOf(actor);
-  const rows = await analyze(actor, entity, eventId, sheet);
+  const rows = await analyze(actor, entity, eventId, sheet, false);
   return {
     entity,
     totalDataRows: sheet.rows.length,
@@ -347,7 +444,7 @@ const IMPORT_COMMIT_CONCURRENCY = 8; // stays under the DB pool size (10, src/li
 export async function commitImport(actor: Actor, entity: ImportEntity, sheet: ParsedSheet): Promise<ImportCommitResult> {
   requireImportPermission(actor, entity);
   const eventId = eventOf(actor);
-  const rows = await analyze(actor, entity, eventId, sheet);
+  const rows = await analyze(actor, entity, eventId, sheet, true);
 
   let created = 0;
   let addedExisting = 0;

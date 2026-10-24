@@ -64,7 +64,7 @@ describe.skipIf(!hasTestDb)("attendance sessions", () => {
     expect(detail.roster[0].record).toMatchObject({ mark: "ABSENT", note: "Device A", version: 1 });
   });
 
-  it("a cluster coordinator can view sessions for their cluster's hotels but not edit them", async () => {
+  it("a cluster coordinator gets the same operational access as a hotel coordinator across their cluster's buses, including editing sessions", async () => {
     const owner = await staff("OWNER");
     const { eventId, busA, coordA, guestA } = await createTwoHotels();
     const north = await clusters.createCluster(owner, clusterInput.parse({ name: "North" }));
@@ -75,12 +75,11 @@ describe.skipIf(!hasTestDb)("attendance sessions", () => {
 
     const session = await sessions.createSession(coordA, { busId: busA.id, date: day1, label: "" });
     const detail = await sessions.getSession(cc, session.id);
-    expect(detail.canEdit).toBe(false);
+    expect(detail.canEdit).toBe(true);
     expect(detail.roster.some((r) => r.user.id === guestA.id)).toBe(true);
-    await expectError(
-      sessions.recordMark(cc, { sessionId: session.id, userId: guestA.id, mark: "BOARDED", note: null, expectedVersion: 0 }),
-      "forbidden",
-    );
+    const marked = await sessions.recordMark(cc, { sessionId: session.id, userId: guestA.id, mark: "BOARDED", note: null, expectedVersion: 0 });
+    expect(marked.version).toBe(0); // brand-new record: version starts at 0, nothing to increment yet
+
   });
 
   it("a coordinator of a different hotel's bus cannot view or edit the session", async () => {
