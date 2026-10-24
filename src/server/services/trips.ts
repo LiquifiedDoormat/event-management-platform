@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { BusStatus } from "@/generated/prisma/enums";
 import { rateLimit } from "@/lib/rate-limit";
-import { can, canChangeStatus, canSendLocation, canStartTrip, type Actor } from "@/server/policies";
+import { canChangeStatus, canSendLocation, canStartTrip, type Actor } from "@/server/policies";
 import { loadScope } from "@/server/policies/scope";
 import { AppError, conflict, forbidden, isUniqueViolation, notFound } from "@/server/errors";
 import { audit } from "./audit";
@@ -92,8 +92,7 @@ export async function startTrip(actor: Actor, busId: string, startStatus: BusSta
 /** Ends a trip: stops tracking and removes the live position (history points remain). */
 export async function endTrip(actor: Actor, tripId: string) {
   const trip = await findTrip(actor, tripId);
-  const allowed = can(actor, "trip.manage") || (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id);
-  if (!allowed) throw forbidden();
+  if (!canChangeStatus(actor, await loadScope(actor), trip)) throw forbidden();
   if (trip.endedAt) return;
   await prisma.$transaction(async (tx) => {
     await tx.trip.update({ where: { id: tripId }, data: { endedAt: new Date(), sharingLocation: false } });
@@ -109,8 +108,7 @@ export async function endTrip(actor: Actor, tripId: string) {
  */
 export async function cancelTrip(actor: Actor, tripId: string) {
   const trip = await findTrip(actor, tripId);
-  const allowed = can(actor, "trip.manage") || (actor.role === "COORDINATOR" && trip.coordinatorId === actor.id);
-  if (!allowed) throw forbidden();
+  if (!canChangeStatus(actor, await loadScope(actor), trip)) throw forbidden();
   if (trip.endedAt) return;
   await prisma.$transaction(async (tx) => {
     await tx.trip.update({ where: { id: tripId }, data: { endedAt: new Date(), sharingLocation: false, cancelled: true } });
@@ -130,7 +128,7 @@ export async function cancelTrip(actor: Actor, tripId: string) {
 export async function changeStatus(actor: Actor, tripId: string, status: BusStatus, expectedVersion: number) {
   const trip = await findTrip(actor, tripId);
   if (trip.endedAt) throw conflict("tripEnded");
-  if (!canChangeStatus(actor, trip)) throw forbidden();
+  if (!canChangeStatus(actor, await loadScope(actor), trip)) throw forbidden();
   if (trip.statusVersion !== expectedVersion) throw conflict("staleStatus");
   if (trip.status === status) return { version: trip.statusVersion };
   const isCorrection = actor.id !== trip.coordinatorId;
@@ -157,7 +155,7 @@ export async function changeStatus(actor: Actor, tripId: string, status: BusStat
 export async function setTripDelayed(actor: Actor, tripId: string, delayed: boolean) {
   const trip = await findTrip(actor, tripId);
   if (trip.endedAt) throw conflict("tripEnded");
-  if (!canChangeStatus(actor, trip)) throw forbidden();
+  if (!canChangeStatus(actor, await loadScope(actor), trip)) throw forbidden();
   if (trip.isDelayed === delayed) return;
   await prisma.$transaction(async (tx) => {
     await tx.trip.update({ where: { id: tripId }, data: { isDelayed: delayed } });
@@ -169,7 +167,7 @@ export async function setTripDelayed(actor: Actor, tripId: string, delayed: bool
 export async function setSharing(actor: Actor, tripId: string, sharing: boolean) {
   const trip = await findTrip(actor, tripId);
   if (trip.endedAt) throw conflict("tripEnded");
-  if (!canSendLocation(actor, trip)) throw forbidden();
+  if (!canSendLocation(actor, await loadScope(actor), trip)) throw forbidden();
   if (trip.sharingLocation === sharing) return;
   await prisma.trip.update({ where: { id: tripId }, data: { sharingLocation: sharing } });
 }
@@ -198,7 +196,7 @@ const LOCATION_LIMIT = { limit: 30, windowSeconds: 60 };
 export async function recordLocation(actor: Actor, input: LocationInput): Promise<LocationResult> {
   const trip = await findTrip(actor, input.tripId);
   if (trip.endedAt) throw conflict("tripEnded");
-  if (!canSendLocation(actor, trip)) throw forbidden();
+  if (!canSendLocation(actor, await loadScope(actor), trip)) throw forbidden();
 
   const now = Date.now();
   if (input.recordedAt > now + MAX_FUTURE_MS) throw new AppError("invalid", "clockAhead");

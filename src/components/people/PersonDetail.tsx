@@ -2,7 +2,8 @@ import { getFormatter, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { BackLink } from "@/components/ui/BackLink";
 import type { SessionUser } from "@/lib/auth/session";
-import { assignableRoles, can, canEditPerson, canResetPin, canSetAttendeeHotel } from "@/server/policies";
+import { assignableRoles, can, canCheckInOutAttendee, canEditPerson, canManageRoomAssignment, canManageZoneAssignment, canResetPin, canSetAttendeeHotel, isStaff } from "@/server/policies";
+import { loadScope } from "@/server/policies/scope";
 import { getPerson } from "@/server/services/people";
 import { getCluster } from "@/server/services/clusters";
 import { hotelOptions } from "@/server/services/hotels";
@@ -20,13 +21,14 @@ type Person = Awaited<ReturnType<typeof getPerson>>;
 export async function PersonDetail({ user, person, backHref }: { user: SessionUser; person: Person; backHref: string }) {
   const editable = can(user, "person.update") && canEditPerson(user, person);
   const isSelf = user.id === person.id;
+  const scope = isStaff(user) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(user);
   const canHotel = person.role === "CUSTOMER" && canSetAttendeeHotel(user, person.hotelId);
-  const canZone = person.role === "CUSTOMER" && can(user, "zone.manageAssignments");
-  const canRoom = person.role === "CUSTOMER" && Boolean(person.hotelId) && can(user, "room.manageAssignments");
+  const canZone = person.role === "CUSTOMER" && canManageZoneAssignment(user, scope, person);
+  const canRoom = person.role === "CUSTOMER" && Boolean(person.hotelId) && canManageRoomAssignment(user, scope, person);
   const canRole = !isSelf && can(user, "person.changeRole") && canEditPerson(user, person);
   const canStatus = !isSelf && can(user, "person.deactivate") && canEditPerson(user, person);
   const canPin = canResetPin(user, person);
-  const canCheckInOut = person.role === "CUSTOMER" && can(user, "attendance.checkInOut");
+  const canCheckInOut = person.role === "CUSTOMER" && canCheckInOutAttendee(user, scope, person);
   // An Admin selecting a cluster coordinator sees the hotels (and their own
   // coordinators) under that cluster — same data the Clusters section already
   // shows, reused rather than re-queried from scratch.

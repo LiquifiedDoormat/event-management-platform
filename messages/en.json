@@ -577,6 +577,7 @@
     "entities": {
       "hotels": "Hotels",
       "coordinators": "Coordinators",
+      "clusterCoordinators": "Cluster coordinators",
       "attendees": "Guests",
       "buses": "Buses"
     },
@@ -610,7 +611,8 @@
       "registration": "Registration number",
       "routeNotes": "Route notes",
       "_form": "Form",
-      "coordinatorPhone": "Coordinator phone"
+      "coordinatorPhone": "Coordinator phone",
+      "cluster": "Cluster"
     },
     "issueKeys": {
       "hotelNotFound": "No active hotel with this exact name in the current event.",
@@ -622,7 +624,9 @@
       "duplicatePhone": "This person is already registered for this event.",
       "duplicatePhoneInFile": "This phone number appears more than once in the file.",
       "coordinatorAssignForbidden": "Only the Owner can assign a bus coordinator. Leave this column blank, or ask the Owner to run this import.",
-      "coordinatorNotFound": "No active coordinator registered for this event has this phone number."
+      "coordinatorNotFound": "No active coordinator registered for this event has this phone number.",
+      "clusterRequiresHotel": "A cluster can only be set on a row that also names a hotel.",
+      "conflictingAssignment": "This file assigns the same cluster coordinator or hotel to two different clusters."
     },
     "errors": {
       "emptyFile": "The file has no data rows.",

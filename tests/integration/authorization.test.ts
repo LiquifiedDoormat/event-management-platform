@@ -53,11 +53,12 @@ describe.skipIf(!hasTestDb)("relationship-based authorization", () => {
   it("accepts GPS only from the active trip's coordinator", async () => {
     const { coordA, coordB, busA, guestA } = await createTwoHotels();
     const trip = await prisma.trip.create({ data: { busId: busA.id, coordinatorId: coordA.id } });
-    expect(canSendLocation(coordA, trip)).toBe(true);
-    expect(canSendLocation(coordB, trip)).toBe(false);
-    expect(canSendLocation(guestA, trip)).toBe(false);
+    const [scopeA, scopeB, scopeGuest] = await Promise.all([loadScope(coordA), loadScope(coordB), loadScope(guestA)]);
+    expect(canSendLocation(coordA, scopeA, trip)).toBe(true);
+    expect(canSendLocation(coordB, scopeB, trip)).toBe(false);
+    expect(canSendLocation(guestA, scopeGuest, trip)).toBe(false);
     const ended = await prisma.trip.update({ where: { id: trip.id }, data: { endedAt: new Date() } });
-    expect(canSendLocation(coordA, ended)).toBe(false);
+    expect(canSendLocation(coordA, scopeA, ended)).toBe(false);
   });
 
   it("gives staff an event-wide view", async () => {

@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import type { AttendanceType } from "@/generated/prisma/enums";
-import { can, canRecordBoarding, canViewPerson, isStaff, type Actor } from "@/server/policies";
+import { canCheckInOutAttendee, canRecordBoarding, canViewPerson, isStaff, type Actor } from "@/server/policies";
 import { loadScope } from "@/server/policies/scope";
 import { AppError, forbidden, notFound } from "@/server/errors";
 import { eventOf } from "./context";
@@ -20,11 +20,12 @@ async function requireActiveAttendee(eventId: string, userId: string) {
   return member;
 }
 
-/** Venue check-in/out, optionally at a named gate. Staff only. */
+/** Venue check-in/out, optionally at a named gate. Staff, or a cluster coordinator for an attendee of a hotel in their cluster. */
 export async function recordCheckInOut(actor: Actor, input: { userId: string; type: "CHECK_IN" | "CHECK_OUT"; gateId?: string }) {
-  if (!can(actor, "attendance.checkInOut")) throw forbidden();
   const eventId = eventOf(actor);
-  await requireActiveAttendee(eventId, input.userId);
+  const attendee = await requireActiveAttendee(eventId, input.userId);
+  const scope = isStaff(actor) ? { hotelIds: new Set<string>(), operableBusIds: new Set<string>() } : await loadScope(actor);
+  if (!canCheckInOutAttendee(actor, scope, attendee)) throw forbidden();
   if (input.gateId) {
     const gate = await prisma.gate.findFirst({ where: { id: input.gateId, eventId }, select: { id: true } });
     if (!gate) throw notFound();

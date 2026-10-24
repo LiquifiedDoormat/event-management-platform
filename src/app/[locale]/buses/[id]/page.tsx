@@ -1,12 +1,13 @@
 import { getFormatter, getTranslations, setRequestLocale } from "next-intl/server";
-import { Link } from "@/i18n/navigation";
+import { Link, redirect } from "@/i18n/navigation";
 import { BackLink } from "@/components/ui/BackLink";
 import { can } from "@/server/policies";
 import { getBus } from "@/server/services/buses";
 import { hotelOptions } from "@/server/services/hotels";
 import { coordinatorOptions } from "@/server/services/people";
 import { listAssignments } from "@/server/services/busCoordinatorSchedule";
-import { orNotFound, requireStaff } from "@/lib/utils/page";
+import { requireUser } from "@/lib/auth/current-user";
+import { orNotFound } from "@/lib/utils/page";
 import {
   addStopAction,
   assignBusCoordinatorAction,
@@ -29,10 +30,18 @@ import { STATUS_BADGE_TONE, STATUS_KIND } from "@/lib/transport/status";
 export default async function BusDetailPage({ params }: PageProps<"/[locale]/buses/[id]">) {
   const { locale, id } = await params;
   setRequestLocale(locale);
-  const user = await requireStaff(locale);
+  // Cluster coordinators get this page too, scoped by `getBus` to buses in
+  // their own cluster — same operational actions as a hotel coordinator,
+  // just reached via the existing staff bus-management page rather than a
+  // dedicated one. Edit/reassignment/deactivation sections below stay gated
+  // behind their own Admin+Owner `can()` checks, unaffected by this.
+  const user = await requireUser(locale, ["OWNER", "ADMIN", "CLUSTER_COORDINATOR"]);
+  const isStaff = user.role === "OWNER" || user.role === "ADMIN";
+  if (isStaff && !user.eventId) redirect({ href: "/events", locale });
   const bus = await orNotFound(getBus(user, id));
   const isOwner = can(user, "bus.reassignHotel");
   const canEditStops = can(user, "bus.editStops");
+  const canOperateTrip = can(user, "trip.manage") || user.role === "CLUSTER_COORDINATOR";
   const [t, tc, ts, ttrip, format, hotels, coordinators, schedule] = await Promise.all([
     getTranslations("buses"),
     getTranslations("common"),
@@ -89,7 +98,7 @@ export default async function BusDetailPage({ params }: PageProps<"/[locale]/bus
         />
       </Section>
 
-      {can(user, "trip.manage") && bus.isActive && (
+      {canOperateTrip && bus.isActive && (
         <Section title={ttrip("staffTitle")}>
           {trip ? (
             <>

@@ -28,9 +28,13 @@ export async function loadScope(actor: Actor): Promise<Scope> {
     });
     if (!membership?.clusterId) return EMPTY;
     const hotels = await prisma.hotel.findMany({ where: { eventId, clusterId: membership.clusterId }, select: { id: true } });
-    // View only: cluster coordinators oversee their cluster's hotels but don't
-    // operate buses themselves, so operableBusIds stays empty.
-    return { hotelIds: new Set(hotels.map((h) => h.id)), operableBusIds: new Set() };
+    const hotelIds = new Set(hotels.map((h) => h.id));
+    // A cluster coordinator operates no bus of their own, but gets the same
+    // operational actions as a hotel coordinator for every bus across their
+    // cluster's hotels (trip management, boarding/attendance, GPS) — never
+    // limited to one bus the way a hotel coordinator's own assignment is.
+    const buses = hotelIds.size ? await prisma.bus.findMany({ where: { hotelId: { in: [...hotelIds] }, isActive: true }, select: { id: true } }) : [];
+    return { hotelIds, operableBusIds: new Set(buses.map((b) => b.id)) };
   }
   if (actor.role !== "COORDINATOR") return EMPTY;
 
